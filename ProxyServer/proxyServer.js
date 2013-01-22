@@ -2,26 +2,28 @@ var http = require('http');
 var auth = require("http-auth");
 var net = require('net');
 var url = require('url');
+var url = require('url');
 var domain = require('domain');
 var redis = require('redis');
-var proxy, redisClient;
+var proxy, redisClient, redisDB = 15210;
 
+//
+// Loggin and accounting
+//
 var enableLog = true, gLogLevel = 5;
 var enableAccounting = true, gAccountingLevel = 5, accountingPrefix = 'NODE_MRU';
-
 var debugLevel = 5, verboseLevel = 6, quietLevel = 1, muteLevel = 0;
 
+// Server variables
 var proxyIPtoListenOn = '127.0.0.1';
 var proxyPortToListenOn = 3000;
 
-var redisDB = 15210;
 
 /*
  process.on('uncaughtException', function (err) {
  console.log('Caught exception: ' + err);
  });
 */
-
 
 // basic Auth
 var basic = auth({
@@ -30,7 +32,9 @@ var basic = auth({
     authType: "basic",
 });
 
-
+//
+// Function for login purposes only
+//
 var logFunction = function (meaning, objecttoShow, fLogLevel) {
     if ((enableLog === true) && (fLogLevel <= gLogLevel)) {
         console.log('** BEGIN ** ' + meaning + ' **');
@@ -39,12 +43,26 @@ var logFunction = function (meaning, objecttoShow, fLogLevel) {
     }
 };
 
+//
+// Logs information to a redis database for accounting purposes
+//
+var accountingFunction = function (AccountingKey, accountingValue, fAccountingLevel) {
+    if ((enableAccounting === true) && (fAccountingLevel <= gAccountingLevel)) {
+        redisClient.hmset(accountingPrefix+AccountingKey,accountingValue);
+    }
+};
+
+//
+// Print a URL after parsing it
+//
 var printURL = function (urlToPrint) {
     var parsedURL = url.parse(urlToPrint, true);
     logFunction('URL', parsedURL, quietLevel);
 };
 
-
+//
+// Connect to a redis server and set te right database
+//
 var connectToDB = function () {
 
     redisClient = redis.createClient();
@@ -61,6 +79,9 @@ var connectToDB = function () {
     redisClient.select(redisDB, function () { /* ... */ });
 };
 
+//
+// Close the redis dabase in an ordered way
+//
 var closeDB = function () {
 
     redisClient.quit();
@@ -68,31 +89,28 @@ var closeDB = function () {
 };
 
 
-var accountingFunction = function (AccountingKey, accountingValue, fAccountingLevel) {
-    if ((enableAccounting === true) && (fAccountingLevel <= gAccountingLevel)) {
-
-        console.log(accountingPrefix+AccountingKey, accountingValue);
-        redisClient.hmset(accountingPrefix+AccountingKey,accountingValue);
-
-    }
-};
-
-// Connect to DB for loggin
+// Connect to DB for logging
 connectToDB();
 
-// Create an HTTP tunneling proxy with basic authentication
-// Example from nodejs.org and others
-//
 
 // create a top-level domain for the server
-var serverDomain = domain.create();
+var rootServerDomain = domain.create();
 
-// Global Server Domain
-serverDomain.on('error', function(er) {
-    console.error('Caught error on server Domain!', er);
+// From a warning message:
+// (node) warning: possible EventEmitter memory leak detected. 11 listeners added. Use emitter.setMaxListeners() to increase limit.
+//
+// process.setMaxListeners(1000);
+// rootServerDomain.setMaxListeners(1000);
+
+// Global Server Domain error control
+rootServerDomain.on('error', function(er) {
+    console.error('Caught error on server Domain!');
 });
 
-serverDomain.run(function() {
+//
+// Run the server in a specific domain
+//
+rootServerDomain.run(function() {
     proxy = http.createServer();
 });
 
@@ -113,31 +131,14 @@ proxy.on('connect', function (req, cltSocket, head) {
     });
 });
 
+//
+// main http server loop
+//
 proxy.on('request', function(request, response) {
 
     // Basic authentication
 // 	basic.apply(request, response, function(username) {
 //		logFunction ('Basic apply received', username, quietLevel);
-
-    // Internal domain for request and response
-    var reqd = domain.create();
-    reqd.add(request);
-    reqd.add(response);
-    reqd.on('error', function(er) {
-        console.error('Error', er, request.url);
-        try {
-            res.writeHead(500);
-            res.end('Error occurred, sorry.');
-            res.on('close', function() {
-                // forcibly shut down any other things added to this domain
-                reqd.dispose();
-            });
-        } catch (er) {
-            console.error('Error sending 500', er, request.url);
-            // tried our best.  clean up anything remaining.
-            reqd.dispose();
-        }
-    });
 
     var parsedURL = url.parse(request.url, true);
     var opts = {
@@ -149,6 +150,9 @@ proxy.on('request', function(request, response) {
         headers: request.headers,
     };
 
+    //
+    // Accounting information
+    //
     dateNow= Date.now();
 
     var accountingInformation = {
@@ -163,65 +167,90 @@ proxy.on('request', function(request, response) {
 
     logFunction('AccountingInformation', accountingInformation, verboseLevel);
 
-    accountingFunction (dateNow.toString(), accountingInformation, verboseLevel);
+    accountingFunction (dateNow.toString(), accountingInformation, debugLevel);
 
     logFunction('OriginHost', request.connection.remoteAddress, verboseLevel);
     logFunction('URL', parsedURL, verboseLevel);
 
+    rootServerDomain.on('error', function(er) {
+        console.error('Error within rootServerDomain');
+        try {
+            response.writeHead(500);
+            response.end('Error occurred, sorry.');
+            response.on('close', function() {
+            });
+        } catch (er) {
+            console.error('Error sending 500', er, proxy.response);
+        }
+    });
 
-    var sourceHTTP = http.request(opts, function (resSource) {
+    // http client
+    var sourceHTTP;
+
+    // create a domain for proxy-to-origin client
+    var proxyToOriginDomain = domain.create();
+
+
+    // Proxy to Origin Domain error control
+    proxyToOriginDomain.on('error', function(er) {
+        console.error('Caught error on proxyToOrigin Domain! Method (',sourceHTTP.method, ') ',
+            sourceHTTP._headers.host+sourceHTTP.path);
+        try {
+            response.writeHead(500);
+            response.end('Error occurred, sorry.');
+            response.on('close', function() {
+            });
+        } catch (er) {
+            console.error('Error sending 500 to EndUser');
+        }
+    });
+
+    proxyToOriginDomain.run(function() {
+        sourceHTTP = http.request(opts);
+    });
+
+    sourceHTTP.on('response', function (resSource) {
 
         // We should state the statusCode before the first write
         response.statusCode=resSource.statusCode;
         response.writeHead(resSource.statusCode, resSource.headers);
 
-        logFunction('Headers', resSource.headers, verboseLevel);
+        logFunction('Headers', JSON.stringify(resSource.headers), verboseLevel);
 
         resSource.on('data', function (d) {
-            logFunction ('http_request on_data', 'before', verboseLevel);
-            response.write(d);
-            logFunction ('http_request on_data', 'after', verboseLevel);
+            try {
+                response.write(d);
+            } catch (er) {
+                console.error('Error response.write', er);
+            }
         });
         resSource.on('end', function () {
-            logFunction ('http_request on_end Status', resSource.statusCode, verboseLevel);
             response.end();
-            logFunction ('http_request. response ended', resSource.statusCode, verboseLevel);
         });
 
-        request.on('error', function (exception) {
-            logFunction ('http_request on_Error: exception', exception, verboseLevel);
-            sourceHTTP.end();
-            logFunction ('http_request on_error', 'after', verboseLevel);
+        resSource.on('error', function (exception) {
+            response.end();
         });
 
     });
 
     request.on('data', function(chunk) {
         // we process the data
-        logFunction ('http_server on_data', 'before', verboseLevel);
         sourceHTTP.write(chunk);
-        logFunction ('http_server on_data', 'after', verboseLevel);
     });
 
     request.on('clientError', function (exception) {
-        logFunction ('http_server on_clientError: exception', exception, verboseLevel);
         sourceHTTP.end();
-        logFunction ('http_server on_clientError', 'after', verboseLevel);
 
     });
 
     request.on('error', function (exception) {
-        logFunction ('http_server on_Error: exception', exception, verboseLevel);
         sourceHTTP.end();
-        logFunction ('http_server on_Error', 'after', verboseLevel);
 
     });
 
-
     request.on('end', function () {
-        logFunction ('http_server on_request on_end', Date(Date.now()).toString(), verboseLevel);
         sourceHTTP.end();
-        logFunction ('http_server on_request on_end', 'after', verboseLevel);
 
     });
 // 	});
