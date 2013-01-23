@@ -1,5 +1,6 @@
 var http = require('http');
 var url = require('url');
+var auth = require("./psAuth.js");
 var logger = require('./pslogger.js');
 // Server variables
 var proxyIPtoListenOn = '127.0.0.1';
@@ -18,6 +19,10 @@ process.on('uncaughtException', function (err) {
 
 
 http.createServer(function(request, response) {
+
+    if ( auth.checkValidIPAgent(request, response) === false) {
+        return;
+    }
 
     logger.genAccountInformation(request);
     var parsedURL = url.parse(request.url, true);

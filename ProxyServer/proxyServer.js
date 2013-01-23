@@ -1,9 +1,9 @@
 var http = require('http');
-var auth = require("http-auth");
 var net = require('net');
 var url = require('url');
 var domain = require('domain');
 var logger = require('./pslogger.js');
+var auth = require("./psAuth.js");
 // Server variables
 var proxyIPtoListenOn = '127.0.0.1';
 var proxyPortToListenOn = 3000;
@@ -13,14 +13,6 @@ var proxyPortToListenOn = 3000;
  console.log('Caught exception: ' + err);
  });
 */
-
-// basic Auth
-var basic = auth({
-    authRealm: "Cozuelos private area",
-    authFile: __dirname + "/htpasswd",
-    authType: "basic",
-    // algorithm: 'SHA',
-});
 
 // Connect to DB for logging
 logger.connectToDB();
@@ -51,55 +43,14 @@ proxy.on('connect', function (request, cltSocket, head) {
     });
 });
 
-var authPlaying = function(request, response) {
-    // Basic authentication
-    var auth = request.headers['authorization'];  // auth is in base64(username:password)  so we need to decode the base64
-
-    if(!auth) {     // No Authorization header was passed in so it's the first time the browser hit us
-        // Sending a 401 will require authentication, we need to send the 'WWW-Authenticate' to tell them the sort of authentication to use
-        // Basic auth is quite literally the easiest and least secure, it simply gives back  base64( username + ":" + password ) from the browser
-        response.statusCode = 401;
-        response.setHeader('WWW-Authenticate', 'Basic realm="Secure Area"');
-
-        response.end('<html><body>Need some creds son</body></html>');
-        return false;
-    }
-
-    else if(auth) {    // The Authorization was passed in so now we validate it
-
-        var tmp = auth.split(' ');   // Split on a space, the original auth looks like  "Basic Y2hhcmxlczoxMjM0NQ==" and we need the 2nd part
-
-        var buf = new Buffer(tmp[1], 'base64'); // create a buffer and tell it the data coming in is base64
-        var plain_auth = buf.toString();        // read it back out as a string
-
-        console.log("Decoded Authorization ", plain_auth);
-
-        // At this point plain_auth = "username:password"
-
-        var creds = plain_auth.split(':');      // split on a ':'
-        var username = creds[0];
-        var password = creds[1];
-
-        if((username == 'per') && (password == 'per')) {   // Is the username/password correct?
-            return (true);
-        }
-        else {
-            response.statusCode = 401; // Force them to retry authentication
-            response.setHeader('WWW-Authenticate', 'Basic realm="Secure Area"');
-
-            // res.statusCode = 403;   // or alternatively just reject them altogether with a 403 Forbidden
-
-            response.end('<html><body>You shall not pass</body></html>');
-            return (false);
-        }
-   }
-
-}
 //
 // main http server loop
 //
 proxy.on('request', function(request, response) {
 
+    if ( auth.checkValidIPAgent(request, response) === false) {
+        return;
+    }
 
     var parsedURL = url.parse(request.url, true);
     var opts = {
