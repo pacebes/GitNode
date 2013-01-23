@@ -1,8 +1,0 @@
-
-events.js:71
-        throw arguments[1]; // Unhandled 'error' event
-                       ^
-Error: socket hang up
-    at createHangUpError (http.js:1264:15)
-    at Socket.socketOnEnd [as onend] (http.js:1352:23)
-    at TCP.onread (net.js:419:26)
