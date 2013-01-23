@@ -32,25 +32,25 @@
       <file leaf-file-name="psAuth.js" pinned="false" current="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/psAuth.js">
           <provider selected="true" editor-type-id="text-editor">
-            <state line="16" column="34" selection-start="330" selection-end="330" vertical-scroll-proportion="-9.230769">
+            <state line="13" column="2" selection-start="283" selection-end="283" vertical-scroll-proportion="-7.5">
               <folding />
             </state>
           </provider>
         </entry>
       </file>
-      <file leaf-file-name="proxyServerInANut.js" pinned="false" current="true" current-in-tab="true">
+      <file leaf-file-name="proxyServerInANut.js" pinned="false" current="false" current-in-tab="false">
         <entry file="file://$PROJECT_DIR$/proxyServerInANut.js">
           <provider selected="true" editor-type-id="text-editor">
-            <state line="14" column="0" selection-start="353" selection-end="353" vertical-scroll-proportion="0.3962264">
+            <state line="14" column="0" selection-start="353" selection-end="353" vertical-scroll-proportion="-8.076923">
               <folding />
             </state>
           </provider>
         </entry>
       </file>
-      <file leaf-file-name="pslogger.js" pinned="false" current="false" current-in-tab="false">
+      <file leaf-file-name="pslogger.js" pinned="false" current="true" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/pslogger.js">
           <provider selected="true" editor-type-id="text-editor">
-            <state line="88" column="65" selection-start="2415" selection-end="2458" vertical-scroll-proportion="-14.269231">
+            <state line="78" column="2" selection-start="2184" selection-end="2184" vertical-scroll-proportion="0.41698113">
               <folding>
                 <element signature="e#0#158#0" expanded="false" />
               </folding>
@@ -79,10 +79,10 @@
       <list>
         <option value="$PROJECT_DIR$/redisList3.js" />
         <option value="$PROJECT_DIR$/accLogger.js" />
-        <option value="$PROJECT_DIR$/pslogger.js" />
         <option value="$PROJECT_DIR$/proxyServer.js" />
-        <option value="$PROJECT_DIR$/psAuth.js" />
         <option value="$PROJECT_DIR$/proxyServerInANut.js" />
+        <option value="$PROJECT_DIR$/psAuth.js" />
+        <option value="$PROJECT_DIR$/pslogger.js" />
       </list>
     </option>
   </component>
@@ -297,25 +297,9 @@
     <breakpoint-manager />
   </component>
   <component name="editorHistoryManager">
-    <entry file="file://$PROJECT_DIR$/pslogger.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state line="88" column="65" selection-start="2415" selection-end="2458" vertical-scroll-proportion="-14.269231">
-          <folding>
-            <element signature="e#0#158#0" expanded="false" />
-          </folding>
-        </state>
-      </provider>
-    </entry>
     <entry file="file://$PROJECT_DIR$/accLogger.js">
       <provider selected="true" editor-type-id="text-editor">
         <state line="0" column="0" selection-start="0" selection-end="39" vertical-scroll-proportion="-0.0">
-          <folding />
-        </state>
-      </provider>
-    </entry>
-    <entry file="file://$PROJECT_DIR$/psAuth.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state line="16" column="34" selection-start="330" selection-end="330" vertical-scroll-proportion="-9.230769">
           <folding />
         </state>
       </provider>
@@ -329,8 +313,24 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/proxyServerInANut.js">
       <provider selected="true" editor-type-id="text-editor">
-        <state line="14" column="0" selection-start="353" selection-end="353" vertical-scroll-proportion="0.3962264">
+        <state line="14" column="0" selection-start="353" selection-end="353" vertical-scroll-proportion="-8.076923">
           <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/psAuth.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state line="13" column="2" selection-start="283" selection-end="283" vertical-scroll-proportion="-7.5">
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/pslogger.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state line="78" column="2" selection-start="2184" selection-end="2184" vertical-scroll-proportion="0.41698113">
+          <folding>
+            <element signature="e#0#158#0" expanded="false" />
+          </folding>
         </state>
       </provider>
     </entry>
