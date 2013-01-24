@@ -297,13 +297,6 @@
     </PATH>
   </component>
   <component name="editorHistoryManager">
-    <entry file="file://$PROJECT_DIR$/psProxyAuth.js">
-      <provider selected="true" editor-type-id="text-editor">
-        <state line="11" column="21" selection-start="253" selection-end="253" vertical-scroll-proportion="-6.3461537">
-          <folding />
-        </state>
-      </provider>
-    </entry>
     <entry file="file://$PROJECT_DIR$/views/index.jade">
       <provider selected="true" editor-type-id="text-editor">
         <state line="0" column="0" selection-start="0" selection-end="94" vertical-scroll-proportion="0.0">
@@ -358,6 +351,13 @@
     <entry file="file://$PROJECT_DIR$/accLogger.js">
       <provider selected="true" editor-type-id="text-editor">
         <state line="24" column="49" selection-start="611" selection-end="611" vertical-scroll-proportion="0.6949807">
+          <folding />
+        </state>
+      </provider>
+    </entry>
+    <entry file="file://$PROJECT_DIR$/psProxyAuth.js">
+      <provider selected="true" editor-type-id="text-editor">
+        <state line="11" column="21" selection-start="253" selection-end="253" vertical-scroll-proportion="0.053380784">
           <folding />
         </state>
       </provider>
