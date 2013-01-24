@@ -8,8 +8,10 @@
 var redis = require('redis');
 var http = require('http');
 var url = require('url');
+var fs = require( 'fs' );
 var proxy, redisClient, redisDB = 15210;
-var redisSemPendingTasks = false;
+var dbReadActivity = false, dbWriteActivity = false;
+var dbOpened = false;
 
 //
 // Loggin and accounting
@@ -17,6 +19,8 @@ var redisSemPendingTasks = false;
 var enableLog = true, gLogLevel = 5;
 var enableAccounting = true, gAccountingLevel = 5, accountingPrefix = 'NODE_MRU';
 exports.debugLevel = 5, exports.verboseLevel = 6, exports.quietLevel = 1, exports.muteLevel = 0;
+exports.msDBInactivityToWait = 1000;
+exports.dbRActivity = 'DBR', exports.dbWActivity = 'DBW', exports.dbRWActivity = 'DBRW';
 
 exports.setLoggingLevel = function ( logEnabled, logLevel) {
     enableLog = logEnabled;
@@ -29,14 +33,6 @@ exports.setAccountingLevel = function ( accEnabled, accLevel, accPrefix) {
     accountingPrefix = accPrefix;
 }
 
-exports.setDBActivitySemaphore = function ( newSemaphoreValue ) {
-    redisSemPendingTasks = newSemaphoreValue;
-}
-
-
-exports.getDBActivitySemaphore = function ( ) {
-    return (redisSemPendingTasks);
-}
 
 //
 // Function for login purposes only
@@ -74,6 +70,7 @@ exports.logFunction = function (meaning, objectToShow, fLogLevel) {
 //
 exports.accountingFunction = function (AccountingKey, accountingValue, fAccountingLevel) {
     if ((enableAccounting === true) && (fAccountingLevel <= gAccountingLevel)) {
+        dbWriteActivity = true;
         redisClient.hmset(accountingPrefix+AccountingKey,accountingValue);
     }
 };
@@ -91,7 +88,7 @@ exports.genAccountInformation = function (request) {
         DestinationPath: parsedURL.path.toString(),
         DestinationProtocol: parsedURL.protocol.toString(),
         Method: request.method.toString(),
-        DateEventmiliseconds: dateNow.toString(),
+        // DateEventmiliseconds: dateNow.toString(),
         dateEventHuman: Date(dateNow).toString()
     };
 
@@ -106,22 +103,22 @@ exports.genAccountInformation = function (request) {
 //
 exports.printURL = function (urlToPrint) {
     var parsedURL = url.parse(urlToPrint, true);
-    exports.logFunction('URL', parsedURL, quietLevel);
+    exports.logFunction('URL', parsedURL, exports.quietLevel);
 };
 
 //
 // Connect to a redis server and set te right database
 //
-exports.connectToDB = function () {
+var connectToDB = function () {
 
     redisClient = redis.createClient();
 
     redisClient.on("error", function (err) {
-        exports.logFunction("Redis error", err, quietLevel);
+        exports.logFunction("Redis error", err, exports.quietLevel);
     });
 
     redisClient.on("end", function (err) {
-        exports.logFunction("Redis end", quietLevel);
+        exports.logFunction("Redis end", exports.quietLevel);
     });
 
     // Select the redis Database
@@ -131,7 +128,7 @@ exports.connectToDB = function () {
 //
 // Close the redis dabase in an ordered way
 //
-exports.closeDB = function (force) {
+var closeDB = function (force) {
     if ( force === false ) {
         // Wait for ending replies
         redisClient.quit();
@@ -141,33 +138,88 @@ exports.closeDB = function (force) {
     }
 };
 
+var createOutputFile = function (fileName) {
+    var opts = {
+        flags: 'w',
+        encoding: null,
+        mode: 0644 };
+
+    var fileStream;
+
+    fileStream = fs.createWriteStream(fileName, opts);
+
+    fileStream.on('end', function() {
+        exports.logFunction('File closed', fileName, exports.verboseLevel);
+    });
+    fileStream.on('error', function(ex) {
+        exports.logFunction('File error: '+ fileName, ex, exports.verboseLevel);
+    });
+    return (fileStream);
+}
+
+var closeOutputFile = function (fileStream) {
+    try {
+        fileStream.end();
+    }
+    catch (err) {
+        exports.logFunction('Error closing Filestream', exports.quietLevel);
+    }
+}
+
+var closeAndCallback = function (fileStream, callbackFunction, param1, param2, param3 )
+{
+    closeOutputFile(fileStream);
+
+    callbackFunction (param1, param2, param3);
+}
+
 //
 // Building on hmget redis key and the structure we dive and print data
 //
-var printKeyData = function ( keyToPrint, structureToPrint)
-{
+var printKeyData = function (keyToPrint, structureToPrint, fileStream, HTMLFormat) {
     // Let's sort out the array to show the information that way
     structureToPrint.sort();
 
     // Still working
-    redisSemPendingTasks = true;
+    dbReadActivity = true;
 
     // Data
-    redisClient.hmget (keyToPrint, structureToPrint, function(err, d) {
+    redisClient.hmget(keyToPrint, structureToPrint, function (err, d) {
+
+        if (HTMLFormat === true) {
+            fileStream.write('\tLI<B>Key: </B>'+ keyToPrint + '\n\tUL\n');
+        }
         // print out the data
-        structureToPrint.forEach( function ( dataName, i ) {
-            console.log (keyToPrint, ':', structureToPrint[i], ': ', d[i]);
+        structureToPrint.forEach(function (dataName, i) {
+            if (HTMLFormat === true) {
+                fileStream.write('\t\tLI<B>' + structureToPrint[i] + '</B>: ' + d[i] + '\n');
+            }
+            else {
+                fileStream.write(keyToPrint + '.' + structureToPrint[i] + ': ' + d[i] + '\n');
+            }
         });
-        console.log('-----');
+        if (HTMLFormat === false) {
+            fileStream.write('-----\n');
+        }
     });
-}
+};
 
 // Print Redis
-exports.printHmsetKeys = function (optionalArgKey, optionalArgFrom, optionalArgTo ) {
+exports.printHmsetKeys = function (pArgKey, pOutputFileName, pHTMLFormat, pHTMLheader, functionToCallBackWhenEnd ) {
 
-    var internalKey = (typeof optionalArgKey === 'undefined') ? accountingPrefix : optionalArgKey;
-    var internalFrom = (typeof optionalArgFrom === 'undefined') ? 0 : optionalArgFrom;
-    var internalTo = (typeof optionalArgTo === 'undefined') ? 0 : optionalArgTo;
+    var internalKey = (typeof pArgKey === 'undefined') ? accountingPrefix : pArgKey;
+    var vOutputFileName = (typeof pOutputFileName === 'undefined') ? 'stdout' : pOutputFileName;
+    var internalHTMLFormat = (typeof pHTMLFormat === 'undefined') ? false : pHTMLFormat;
+    var vHTMLheader = (typeof pHTMLheader === 'undefined') ? '' : pHTMLheader;
+    var callbackFunction = (typeof functionToCallBackWhenEnd === 'undefined') ? function(){} : functionToCallBackWhenEnd;
+    var fileStream; // File Stream
+
+    if (vOutputFileName !== 'stdout') {
+        fileStream = createOutputFile(vOutputFileName);
+    }
+    else {
+        fileStream = process.stdout;
+    }
 
     // Any main key
     redisClient.keys(internalKey + '*', function (err, listOfKeys) {
@@ -176,11 +228,14 @@ exports.printHmsetKeys = function (optionalArgKey, optionalArgFrom, optionalArgT
 
         var dataStructure = [];
 
+        fileStream.write(vHTMLheader);
+        fileStream.write('OL\n');
+
         // We dive within the keys to know the structure
         listOfKeys.forEach (function ( lkElement, i ) {
 
             // Still working
-            redisSemPendingTasks = true;
+            dbReadActivity = true;
 
             // We obtain the structure (not optimal, but generic)
             redisClient.hkeys(lkElement, function(err, replies) {
@@ -193,8 +248,50 @@ exports.printHmsetKeys = function (optionalArgKey, optionalArgFrom, optionalArgT
                 });
 
                 // Let's print everything
-                printKeyData (lkElement, dataStructure);
+                printKeyData (lkElement, dataStructure, fileStream, internalHTMLFormat);
             });
         });
     });
-};
+
+    exports.callWhenNoDBActivity(exports.dbRActivity, closeAndCallback, fileStream, callbackFunction, pOutputFileName);
+}
+
+//
+// Initilize (may ben not) the DB and maxTimeToWait
+//
+exports.init = function (initializeDB, timeToWaitForDB) {
+    var internalDBInitialize = (typeof initializeDB === 'undefined') ? false : initializeDB;
+    exports.msDBInactivityToWait = (typeof timeToWaitForDB === 'undefined') ? exports.msDBInactivityToWait : timeToWaitForDB;
+
+    if ( internalDBInitialize === true) {
+        connectToDB();
+        dbOpened = true;
+    }
+}
+
+exports.callWhenNoDBActivity = function (typeOfActivity, callbackFunction, cbParameter1, cbParameter2, cbParameter3) {
+    var vTypeOfActivity = (typeof typeOfActivity === 'undefined') ? exports.dbRWActivity : typeOfActivity;
+    var vCBFunction = (typeof callbackFunction === 'undefined') ? function(){} : callbackFunction;
+
+    if (dbOpened === true) {
+        dbReadActivity = dbWriteActivity = true;
+
+        // Let's wait for a second before closing and ending
+        setInterval(function () {
+
+            if ( ((vTypeOfActivity === exports.dbRWActivity) && ( dbReadActivity === false ) && ( dbReadActivity === false )) ||
+                ((vTypeOfActivity === exports.dbRActivity) && ( dbReadActivity === false )) ||
+                ((vTypeOfActivity === exports.dbWActivity) && ( dbWriteActivity === false )) ) {
+
+                clearInterval(this);
+                exports.logFunction("Calling back a function when no DB activity", exports.verboseLevel);
+                vCBFunction(cbParameter1, cbParameter2, cbParameter3);
+            }
+            dbReadActivity = dbWriteActivity = false;
+        } , exports.msDBInactivityToWait);
+    }
+}
+
+exports.end = function () {
+    exports.callWhenNoDBActivity(exports.dbRWActivity, closeDB , false);
+}

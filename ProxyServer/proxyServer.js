@@ -3,7 +3,7 @@ var net = require('net');
 var url = require('url');
 var domain = require('domain');
 var logger = require('./pslogger.js');
-var auth = require("./psAuth.js");
+var auth = require("./psProxyAuth.js");
 // Server variables
 var proxyIPtoListenOn = '127.0.0.1';
 var proxyPortToListenOn = 3000;
