@@ -3,3 +3,10 @@ htpasswd
 node_modules
 nohup.out
 views
+nodeError
+nodeProfile.sh
+npm-debug.log
+output.file
+stacks.out
+v8.log
+.idea

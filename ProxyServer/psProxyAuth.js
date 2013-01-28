@@ -5,7 +5,7 @@
  * Time: 13:32
  * To change this template use File | Settings | File Templates.
  */
-var logger = require('./pslogger.js');
+var logger = require('./psLogger.js');
 
 // Simple list
 var authUsers = [

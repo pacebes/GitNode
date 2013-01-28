@@ -2,7 +2,7 @@ var http = require('http');
 var net = require('net');
 var url = require('url');
 var domain = require('domain');
-var logger = require('./pslogger.js');
+var logger = require('./psLogger.js');
 var auth = require("./psProxyAuth.js");
 // Server variables
 var proxyIPtoListenOn = '127.0.0.1';
@@ -15,7 +15,7 @@ var proxyPortToListenOn = 3000;
 */
 
 // Connect to DB for logging
-logger.connectToDB();
+logger.init (true);
 
 // create a top-level domain for the server
 var rootServerDomain = domain.create();
@@ -48,9 +48,11 @@ proxy.on('connect', function (request, cltSocket, head) {
 //
 proxy.on('request', function(request, response) {
 
-    if ( auth.checkValidIPAgent(request, response) === false) {
+    /*
+    if ( auth.checkProxyRequest(request, response) === false) {
         return;
     }
+*/
 
     var parsedURL = url.parse(request.url, true);
     var opts = {
@@ -62,7 +64,7 @@ proxy.on('request', function(request, response) {
         headers: request.headers,
     };
 
-    logger.genAccountInformation(request);
+    logger.saveProxyInformation(request);
 
     // http client
     var sourceHTTP;
@@ -84,17 +86,17 @@ proxy.on('request', function(request, response) {
         }
     });
 
-    proxyToOriginDomain.run(function() {
-        sourceHTTP = http.request(opts);
-    });
+    sourceHTTP = http.request(opts);
 
     sourceHTTP.on('response', function (resSource) {
 
+        resSource.headers.connection = 'close';
         // We should state the statusCode before the first write
         response.statusCode=resSource.statusCode;
         response.writeHead(resSource.statusCode, resSource.headers);
 
-        logger.logFunction('Headers', JSON.stringify(resSource.headers), logger.verboseLevel);
+        logger.logFunction('Source headers', JSON.stringify(resSource.headers), logger.verboseLevel);
+
 
         resSource.on('data', function (d) {
             try {
@@ -103,15 +105,17 @@ proxy.on('request', function(request, response) {
                 console.error('Error response.write', er);
             }
         });
+
         resSource.on('end', function () {
+            logger.logFunction('Source end received');
             response.end();
         });
 
         resSource.on('error', function (exception) {
             response.end();
         });
-
     });
+
 
     request.on('data', function(chunk) {
         // we process the data

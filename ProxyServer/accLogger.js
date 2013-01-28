@@ -1,4 +1,4 @@
-var logger = require('./pslogger.js');
+var logger = require('./psLogger.js');
 
 
 // Just for enjoying: some process control

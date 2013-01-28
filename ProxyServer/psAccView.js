@@ -5,9 +5,10 @@
  * Time: 17:01
  * To change this template use File | Settings | File Templates.
  */
-var logger = require('./pslogger.js');
-var express = require('express');
+var logger = require('./psLogger.js');
+var acc = require('./psAccounting.js');
 var fs = require( 'fs' );
+var express = require('express');
 var app = express();
 var defaultAutoRefreshTime=600, autoRegenerationTime=10;
 var outFileNamePrefix = './views/temporalJadeFile',outFileNameSufix='.txt', jadeRender='proxyUsage',
@@ -30,8 +31,9 @@ var giveMeJadeHeader =  function(title, secondsAutoRefresh, urlToRefresh){
 var callMeWhenDatafileReady = function (outputFileName) {
     fs.rename(outputFileName,jadeFileName, function (err) {
 
+            logger.logFunction('File ready to be served: ' + outputFileName);
             if (typeof pOutputFileName !== 'undefined') {
-                logger.logFunction ('Error when renaming a file:', err, exports.debugLevel);
+                logger.logFunction ('Error when renaming a file:', err, logger.debugLevel);
             }
         }
         );
@@ -41,7 +43,7 @@ var callMeWhenDatafileReady = function (outputFileName) {
 var generateBodyPart = function (secondsAutoRefresh, urlToRefresh) {
 
     // Let's generate the body data (UL + LI)
-    logger.printHmsetKeys('NODE_MRU', outFileNamePrefix+Date.now()+outFileNameSufix,
+    acc.printHmsetKeys('NODE_MRU', outFileNamePrefix+Date.now()+outFileNameSufix,
         true, giveMeJadeHeader('Welcome to Proxy Web Page Usage',secondsAutoRefresh, urlToRefresh),callMeWhenDatafileReady);
 
 }
@@ -52,10 +54,56 @@ var reSendPageToUser = function (response, messageRedirect)
 }
 
 
-exports.runJadeServer = function(jadeServerPort, jadeServerIP) {
+//
+// Messages from the Master
+//
+var processMasterMessage = function (message) {
+
+    if (typeof(message) === 'undefined') {
+        return;
+    }
+
+    switch (message.cmd) {
+        case 'init':
+            logger.logFunction('AccView children received the init message', message , logger.verboseLevel);
+            break;
+
+        default:
+            logger.logFunction('AccView children: received an unknown message', message, logger.quietLevel);
+            break;
+    }
+}
+
+
+var process_on = function () {
+
+    // Process messages from the Master
+    process.on('message', processMasterMessage);
+
+    process.on('error', function (err) {
+        logger.logFunction('AccView process error: ' + err, logger.quietLevel);
+    });
+
+    process.on('uncaughtException', function (err) {
+        logger.logFunction('AccView process caught exception: ' + err, logger.quietLevel);
+    });
+
+    process.on('exit', function () {
+        logger.logFunction('AccView process ends: ' + err, logger.quietLevel);
+    });
+
+}
+
+exports.init = function(jadeServerPort, jadeServerIP, textProcess, idProcess) {
+
+    // DB initialization
+    acc.init (true);
 
     var urlToRefresh = 'http://' + jadeServerIP +':' + jadeServerPort + '/';
     var messageRedirect ='<meta http-equiv="refresh" content="0; url=' + urlToRefresh + '">';
+
+    process_on();
+
     // Very First file
     generateBodyPart(defaultAutoRefreshTime, urlToRefresh);
 
@@ -63,14 +111,18 @@ exports.runJadeServer = function(jadeServerPort, jadeServerIP) {
         res.render(jadeRender);
     });
 
-
     app.get('/regeneration/*', function(req, res) {
 
         generateBodyPart(defaultAutoRefreshTime,urlToRefresh);
         setTimeout(reSendPageToUser, 1000 * autoRegenerationTime, res, messageRedirect);
-        logger.logFunction ('Proxy log page regeneration', exports.verboseLevel);
+        logger.logFunction ('Proxy log page regeneration', logger.verboseLevel);
     });
 
     app.listen(jadeServerPort,jadeServerIP);
+
+    logger.logFunction (textProcess + ' is ready to serve content', logger.verboseLevel);
+
+    // We are ready to serve (message to Master)
+    process.send({cmd: "ready", origin: textProcess, pid: process.pid })
 
 }
