@@ -1,13 +1,6 @@
 /**
  * Created with JetBrains WebStorm.
  * User: pacebes
- * Date: 28/01/13
- * Time: 15:21
- * To change this template use File | Settings | File Templates.
- */
-/**
- * Created with JetBrains WebStorm.
- * User: pacebes
  * Date: 23/01/13
  * Time: 09:40
  * To change this template use File | Settings | File Templates.
@@ -17,7 +10,7 @@ var http = require('http');
 var url = require('url');
 var fs = require('fs');
 var logger = require('./psLogger')
-var redisClient, redisDB = 15210;
+var redisClient, redisConsumer, redisProducer, redisDB = 15210;
 var dbReadActivity = false, dbWriteActivity = false, dbRedisInternalCall = false;
 var dbOpened = false;
 
@@ -29,6 +22,7 @@ var enableAccounting = true, gAccountingLevel = 5, accountingPrefix = 'NODE_MRU'
 exports.debugLevel = 5, exports.verboseLevel = 6, exports.quietLevel = 1, exports.muteLevel = 0;
 exports.dbRActivity = 'DBR', exports.dbWActivity = 'DBW', exports.dbRWActivity = 'DBRW';
 exports.msDBInactivityToWait = 1000;
+exports.accountingChannel = 'Accounting saving Channel';
 
 
 exports.setAccountingLevel = function ( accEnabled, accLevel, accPrefix) {
@@ -52,7 +46,7 @@ accountingFunction = function (AccountingKey, accountingValue, fAccountingLevel)
 };
 
 //
-// Connect to a redis server and set te right database
+// Connect to a redis server and set te right database 
 //
 var connectToDB = function () {
 
@@ -121,7 +115,7 @@ var closeAndCallback = function (fileStream, callbackFunction, param1, param2, p
 //
 // Building on hmget redis key and the structure we dive and print data
 //
-var printKeyData = function (keyToPrint, structureToPrint, fileStream, HTMLFormat, callbackFunction, parameter) {
+var printKeyData = function (keyToPrint, structureToPrint, fileStream, HTMLFormat, callbackFunction, outputFileName) {
     // Let's sort out the array to show the information that way
     structureToPrint.sort();
 
@@ -152,7 +146,10 @@ var printKeyData = function (keyToPrint, structureToPrint, fileStream, HTMLForma
         // When no data pending to write
         if (typeof callbackFunction !== 'undefined') {
             fileStream.once('drain', function () {
-                callbackFunction(parameter);
+                if (outputFileName !== 'stdout') {
+                    closeOutputFile(fileStream);
+                }
+                callbackFunction(outputFileName);
             });
         }
 
@@ -217,6 +214,9 @@ exports.printHmsetKeys = function (pArgKey, pOutputFileName, pHTMLFormat, pHTMLh
         // If no data...
         if (listOfKeys.length === 0) {
             callbackFunction (pOutputFileName);
+            if (vOutputFileName !== 'stdout') {
+                closeOutputFile(fileStream);
+            }
             return;
         }
 
@@ -288,4 +288,69 @@ exports.callWhenNoDBActivity = function (typeOfActivity, callbackFunction, cbPar
 
 exports.end = function () {
     exports.callWhenNoDBActivity(exports.dbRWActivity, closeDB , false);
+}
+
+
+exports.initProducer = function () {
+    redisProducer = redis.createClient();
+
+    redisProducer.on("subscribe", function (channel, count) {
+        logger.logFunction('Producer subscription to ' + channel + ' (' + count + ' channels)', logger.verboseLevel);
+    });
+
+    redisProducer.on("unsubscribe", function (channel, count) {
+        logger.logFunction('Producer unsubscription to ' + channel + ' (' + count + ' channels)', logger.verboseLevel);
+    });
+
+    redisProducer.on("ready", function () {
+        logger.logFunction('Producer ready', logger.verboseLevel);
+    });
+
+}
+
+exports.initConsumer = function () {
+    redisConsumer = redis.createClient();
+
+    redisConsumer.on("subscribe", function (channel, count) {
+        logger.logFunction('Consumer subscription to ' + channel + ' (' + count + ' channels)', logger.verboseLevel);
+    });
+
+    redisConsumer.on("unsubscribe", function (channel, count) {
+        logger.logFunction('Consumer unsubscription to ' + channel + ' (' + count + ' channels)', logger.verboseLevel);
+    });
+
+    redisConsumer.on("ready", function () {
+        logger.logFunction('Consumer ready', logger.verboseLevel);
+    });
+}
+
+exports.endProducer = function () {
+    redisProducer.end();
+}
+
+exports.endConsumer = function () {
+    redisConsumer.end();
+}
+
+exports.subscribeToChannel = function (channelName)  {
+
+    redisConsumer.subscribe(channelName);
+
+}
+exports.unsubscribeToChannel = function (channelName) {
+
+    redisConsumer.unsubscribe("channelName");
+}
+
+exports.callMeOnMessage = function (callBackFunction) {
+
+    redisConsumer.on("message", function (channel, message) {
+        logger.logFunction('Consumer: received a message on channel ' + channel + ' : ' + message, logger.verboseLevel);
+        callBackFunction(channel, message);
+    });
+}
+
+exports.sendMessage = function (channelName, message) {
+    logger.logFunction('Producer: sending a message on channel ' + channelName + ' : ' + message, logger.verboseLevel);
+    redisProducer.publish( channelName, message );
 }

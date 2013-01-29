@@ -8,6 +8,7 @@
 var http = require('http');
 var url = require('url');
 var fs = require( 'fs' );
+var moment = require('moment');
 
 //
 // Loggin
@@ -25,7 +26,12 @@ exports.timeStamp = function() {
 }
 
 exports.humanTimeStamp = function() {
+
     return (Date(exports.timeStamp()).toString());
+}
+
+exports.logTimeStamp = function() {
+    return(moment().format());
 }
 
 //
@@ -52,12 +58,12 @@ exports.logFunction = function (meaning, objectToShow, fLogLevel) {
     if ((enableLog === true) && (fLogLevel <= gLogLevel)) {
 
         if ( isThereAnObjectToShow === true ) {
-            console.log('** BEGIN ** ' + meaning + ' ** ' + exports.humanTimeStamp());
+            console.log('** BEGIN ** ' + meaning + ' ** ' + exports.logTimeStamp() + '(PID ' + process.pid + ')' );
             console.log(objectToShow);
-            console.log('*** END *** ' + meaning + ' ** ' + exports.humanTimeStamp());
+            console.log('*** END *** ' + meaning + ' ** ');
         }
         else {
-            console.log(meaning +  ' (' + exports.humanTimeStamp() + ')');
+            console.log(exports.logTimeStamp() + '(' + process.pid + '): ' + meaning);
         }
     }
 };

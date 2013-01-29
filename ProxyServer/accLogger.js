@@ -1,4 +1,5 @@
-var logger = require('./psLogger.js');
+var acc = require('./psAccounting.js');
+
 
 
 // Just for enjoying: some process control
@@ -12,7 +13,6 @@ process.on('SIGINT', function () {
 
 process.on('SIGKILL', function () {
 	console.log('Got SIGKILL. Bye');
-	endDBConnection (true);
 	process.exit(1);
 });
 /*
@@ -21,9 +21,9 @@ process.on('uncaughtException', function (err) {
 });
 */
 // We init the logger process with DB connection
-logger.init (true,2000);
-logger.printHmsetKeys('NODE_MRU', 'stdout', false, '');
-logger.end ();
+acc.init (true,2000);
+acc.printHmsetKeys('NODE_MRU', 'stdout', false, '');
+acc.end ();
 
 
 

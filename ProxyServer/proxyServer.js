@@ -1,149 +1,92 @@
-var http = require('http');
-var net = require('net');
-var url = require('url');
-var domain = require('domain');
+var cluster = require('cluster');
+var cp = require('child_process');
 var logger = require('./psLogger.js');
-var auth = require("./psProxyAuth.js");
+
 // Server variables
-var proxyIPtoListenOn = '127.0.0.1';
-var proxyPortToListenOn = 3000;
+var proxyIPtoListenOn = '127.0.0.1', proxyPortToListenOn = 3000;
+var jadeServerIP='127.0.0.1', jadeServerPort = 8080;
+var accessWebChild, redisProxyChild, mainProxyserver,
+    accessWebJS ='./psMainAccView.js', redisProxyJS ='./psMainRedisProxy.js', mainProxyServerJS='./psMainProxyServer.js';
 
-/*
- process.on('uncaughtException', function (err) {
- console.log('Caught exception: ' + err);
- });
-*/
+// Check Arguments
+var argv = require('optimist')
+    .usage('Run a proxy Server.\nUsage: $0')
+    .options({
+        proxyServerPort : {
+            demand : true,
+            alias : 'p',
+            description : 'Define the port at which the proxy server will listen'
+        },
+        proxyServerIP : {
+            demand : false,
+            alias : 'ip',
+            description :  'Define the port at which the proxy server will listen',
+            default : proxyIPtoListenOn
+        },
+        webServerPort : {
+            demand : false,
+            alias : 'wp',
+            description : 'Define the port at which the web server will listen',
+            default: jadeServerPort
+        },
+        webServerIP : {
+            demand : true,
+            alias : 'wi',
+            description :  'Define the port at which the web server will listen',
+            default : jadeServerIP
+        }
+    }).argv;
 
-// Connect to DB for logging
-logger.init (true);
+// Gathered values
+proxyIPtoListenOn = argv.proxyServerIP; proxyPortToListenOn = argv.proxyServerPort;
+jadeServerIP = argv.webServerIP; jadeServerPort = argv.webServerPort;
 
-// create a top-level domain for the server
-var rootServerDomain = domain.create();
 
-//
-// Run the server in a specific domain
-//
-rootServerDomain.run(function() {
-    proxy = http.createServer();
-});
+var processMsgFromChildren = function(message) {
 
-// On Connect
-proxy.on('connect', function (request, cltSocket, head) {
-    logger.logFunction('on.connect', request.url, logger.verboseLevel);
-
-    // connect to an origin server
-    var srvUrl = url.parse('http://' + request.url);
-    var srvSocket = net.connect(srvUrl.port, srvUrl.hostname, function() {
-        cltSocket.write('HTTP/1.1 200 Connection Established\r\n' +
-            'Proxy-agent: Node-Proxy\r\n' +
-            '\r\n');
-        srvSocket.write(head);
-        srvSocket.pipe(cltSocket);
-        cltSocket.pipe(srvSocket);
-    });
-});
-
-//
-// main http server loop
-//
-proxy.on('request', function(request, response) {
-
-    /*
-    if ( auth.checkProxyRequest(request, response) === false) {
+    if (typeof(message) === 'undefined') {
         return;
     }
-*/
 
-    var parsedURL = url.parse(request.url, true);
-    var opts = {
-        host: parsedURL.host,
-        protocol: parsedURL.protocol,
-        port: parsedURL.port,
-        path: parsedURL.path,
-        method: request.method,
-        headers: request.headers,
-    };
+    switch (message.cmd) {
 
-    logger.saveProxyInformation(request);
+        case 'ready':
+            logger.logFunction('Master: received a READY message from ' + message.origin + ' (PID ' + message.pid + ') ', logger.quietLevel);
+            break;
 
-    // http client
-    var sourceHTTP;
+        case "account":
+            logger.logFunction('Forwarding account message to the logger', logger.verboseLevel);
+            // Let's forward the message to the parent
+            redisProxyChild.send(message);
+            break
 
-    // create a domain for proxy-to-origin client
-    var proxyToOriginDomain = domain.create();
-
-    // Proxy to Origin Domain error control
-    proxyToOriginDomain.on('error', function(er) {
-        console.error('Caught error on proxyToOrigin Domain! Method (',sourceHTTP.method, ') ',
-            sourceHTTP._headers.host+sourceHTTP.path);
-        try {
-            response.writeHead(500);
-            response.end('Error occurred, sorry.');
-            response.on('close', function() {
-            });
-        } catch (er) {
-            console.error('Error sending 500 to EndUser');
-        }
-    });
-
-    sourceHTTP = http.request(opts);
-
-    sourceHTTP.on('response', function (resSource) {
-
-        resSource.headers.connection = 'close';
-        // We should state the statusCode before the first write
-        response.statusCode=resSource.statusCode;
-        response.writeHead(resSource.statusCode, resSource.headers);
-
-        logger.logFunction('Source headers', JSON.stringify(resSource.headers), logger.verboseLevel);
+        default:
+            logger.logFunction('Master: received an unknown message', logger.quietLevel);
+            break;
+    }
+};
 
 
-        resSource.on('data', function (d) {
-            try {
-                response.write(d);
-            } catch (er) {
-                console.error('Error response.write', er);
-            }
-        });
+var createChildRedisProxy = function () {
+    redisProxyChild = cp.fork(redisProxyJS);
+    redisProxyChild.on('message', processMsgFromChildren);
+}
 
-        resSource.on('end', function () {
-            logger.logFunction('Source end received');
-            response.end();
-        });
+var createChildWebAccServer = function( port, IP) {
+    accessWebChild = cp.fork(accessWebJS, [port, IP] );
+    accessWebChild.on('message', processMsgFromChildren);
+}
 
-        resSource.on('error', function (exception) {
-            response.end();
-        });
-    });
+var createChildProxyController = function(port, IP)
+{
+    mainProxyserver = cp.fork(mainProxyServerJS, [port, IP] );
+    mainProxyserver.on('message', processMsgFromChildren);
 
+}
 
-    request.on('data', function(chunk) {
-        // we process the data
-        sourceHTTP.write(chunk);
-    });
-
-    request.on('error', function (exception) {
-        sourceHTTP.end();
-
-    });
-
-    request.on('end', function () {
-        sourceHTTP.end();
-
-    });
-
-});
-
-proxy.on('connection', function (socketConnection) {
-    // Just in case I need it
-});
-
-proxy.on('close', function() {
-    logger.logFunction('General Info', 'Close received', logger.quietLevel);
-});
+createChildRedisProxy();
+createChildWebAccServer(jadeServerPort, jadeServerIP);
+createChildProxyController(proxyPortToListenOn, proxyIPtoListenOn);
 
 
-// Running proxy
-proxy.listen(proxyPortToListenOn, proxyIPtoListenOn, function() {
-});
 

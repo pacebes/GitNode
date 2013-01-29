@@ -89,12 +89,12 @@ var process_on = function () {
     });
 
     process.on('exit', function () {
-        logger.logFunction('AccView process ends: ' + err, logger.quietLevel);
+        logger.logFunction('AccView process received exit', logger.quietLevel);
     });
 
 }
 
-exports.init = function(jadeServerPort, jadeServerIP, textProcess, idProcess) {
+var initProcess = function(jadeServerPort, jadeServerIP, textProcess) {
 
     // DB initialization
     acc.init (true);
@@ -126,3 +126,12 @@ exports.init = function(jadeServerPort, jadeServerIP, textProcess, idProcess) {
     process.send({cmd: "ready", origin: textProcess, pid: process.pid })
 
 }
+
+// print process.argv
+process.argv.forEach(function (val, index, array) {
+    logger.logFunction('Parameter ' + index + ': ' + val, logger.verboseLevel);
+});
+
+
+// Init the process
+initProcess(process.argv[2], process.argv[3], process.argv[1]);
