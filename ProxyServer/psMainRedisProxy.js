@@ -121,8 +121,13 @@ var initProcess = function (textProcess) {
 
     logger.logFunction (textProcess + ' (PID ' + process.pid + ') is ready to store Account information', logger.verboseLevel);
 
-    // We are ready to serve (message to Master)
-    process.send({cmd: "ready", origin: textProcess, pid: process.pid })
+    if (typeof process.send === 'function') {
+        // We are ready to serve (message to Master)
+        process.send({cmd: "ready", origin: textProcess, pid: process.pid })
+    }
+
+    logger.enableProcLogging(logger.defaultReportingPeriod, false, logger.quietLevel, 'RedisProxy   ', true, true);
+
 }
 
 // print process.argv

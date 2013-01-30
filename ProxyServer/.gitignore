@@ -11,3 +11,11 @@ stacks.out
 v8.log
 .idea
 abOutput
+.gitignore
+.DS_Store
+performance
+lanzAb.sh
+node.log
+openPorts.txt
+outputs.file
+process.sh

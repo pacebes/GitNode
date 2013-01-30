@@ -9,6 +9,7 @@ var redis = require('redis');
 var http = require('http');
 var url = require('url');
 var fs = require('fs');
+var bw = require ("buffered-writer");
 var logger = require('./psLogger')
 var redisClient, redisConsumer, redisProducer, redisDB = 15210;
 var dbReadActivity = false, dbWriteActivity = false, dbRedisInternalCall = false;
@@ -78,38 +79,22 @@ var closeDB = function (force) {
 };
 
 var createOutputFile = function (fileName) {
-    var opts = {
-        flags: 'w',
-        encoding: null,
-        mode: 0644 };
 
     var fileStream;
 
-    fileStream = fs.createWriteStream(fileName, opts);
+    // fileStream = fs.createWriteStream(fileName, { flags: 'w', encoding: null, mode: 0644 });
+    fileStream = bw.open(fileName,  { bufferSize: 32*1024, encoding: 'utf8', append: false, mode: 0644, start:0 })
 
     fileStream.on('end', function() {
         logger.logFunction('File closed', fileName, logger.verboseLevel);
     });
+
     fileStream.on('error', function(ex) {
         logger.logFunction('File error: '+ fileName, ex, logger.verboseLevel);
     });
     return (fileStream);
-}
 
-var closeOutputFile = function (fileStream) {
-    try {
-        fileStream.end();
-    }
-    catch (err) {
-        logger.logFunction('Error closing Filestream', logger.quietLevel);
-    }
-}
 
-var closeAndCallback = function (fileStream, callbackFunction, param1, param2, param3 )
-{
-    closeOutputFile(fileStream);
-
-    callbackFunction (param1, param2, param3);
 }
 
 //
@@ -143,14 +128,30 @@ var printKeyData = function (keyToPrint, structureToPrint, fileStream, HTMLForma
         if (HTMLFormat === false) {
             fileStream.write('-----\n');
         }
+
         // When no data pending to write
         if (typeof callbackFunction !== 'undefined') {
+
+            if (outputFileName !== 'stdout') {
+                fileStream.close( function () {
+                    callbackFunction(outputFileName);
+                });
+            }
+            else {
+                callbackFunction(outputFileName);
+            }
+
+            // drain works with NOT buffered streams
+            // which also needs createWriteStream if we don't want to wait
+            // callback after a "write"
+            /*
             fileStream.once('drain', function () {
                 if (outputFileName !== 'stdout') {
-                    closeOutputFile(fileStream);
+                    fileStream.end();
                 }
                 callbackFunction(outputFileName);
             });
+            */
         }
 
     });
@@ -215,7 +216,7 @@ exports.printHmsetKeys = function (pArgKey, pOutputFileName, pHTMLFormat, pHTMLh
         if (listOfKeys.length === 0) {
             callbackFunction (pOutputFileName);
             if (vOutputFileName !== 'stdout') {
-                closeOutputFile(fileStream);
+                fileStream.close( function () {});
             }
             return;
         }

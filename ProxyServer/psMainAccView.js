@@ -84,9 +84,11 @@ var process_on = function () {
         logger.logFunction('AccView process error: ' + err, logger.quietLevel);
     });
 
+    /*
     process.on('uncaughtException', function (err) {
         logger.logFunction('AccView process caught exception: ' + err, logger.quietLevel);
     });
+*/
 
     process.on('exit', function () {
         logger.logFunction('AccView process received exit', logger.quietLevel);
@@ -122,8 +124,13 @@ var initProcess = function(jadeServerPort, jadeServerIP, textProcess) {
 
     logger.logFunction (textProcess + ' is ready to serve content', logger.verboseLevel);
 
-    // We are ready to serve (message to Master)
-    process.send({cmd: "ready", origin: textProcess, pid: process.pid })
+    // Process parameters
+    logger.enableProcLogging(logger.defaultReportingPeriod, false, logger.quietLevel, 'LogAccessWeb ', true, true);
+
+    if (typeof process.send === 'function') {
+        // We are ready to serve (message to Master)
+        process.send({cmd: "ready", origin: textProcess, pid: process.pid })
+    }
 
 }
 

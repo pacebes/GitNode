@@ -7,6 +7,7 @@ var proxyIPtoListenOn = '127.0.0.1', proxyPortToListenOn = 3000;
 var jadeServerIP='127.0.0.1', jadeServerPort = 8080;
 var accessWebChild, redisProxyChild, mainProxyserver,
     accessWebJS ='./psMainAccView.js', redisProxyJS ='./psMainRedisProxy.js', mainProxyServerJS='./psMainProxyServer.js';
+var childList =[];
 
 // Check Arguments
 var argv = require('optimist')
@@ -14,12 +15,12 @@ var argv = require('optimist')
     .options({
         proxyServerPort : {
             demand : true,
-            alias : 'p',
+            alias : 'pp',
             description : 'Define the port at which the proxy server will listen'
         },
         proxyServerIP : {
             demand : false,
-            alias : 'ip',
+            alias : 'pip',
             description :  'Define the port at which the proxy server will listen',
             default : proxyIPtoListenOn
         },
@@ -52,6 +53,8 @@ var processMsgFromChildren = function(message) {
 
         case 'ready':
             logger.logFunction('Master: received a READY message from ' + message.origin + ' (PID ' + message.pid + ') ', logger.quietLevel);
+            // We only add children for the time being.
+            childList[childList.length] = {processDesc: message.origin, processPID:message.pid};
             break;
 
         case "account":
@@ -61,7 +64,7 @@ var processMsgFromChildren = function(message) {
             break
 
         default:
-            logger.logFunction('Master: received an unknown message', logger.quietLevel);
+            logger.logFunction('Master: received an unknown message', message, logger.quietLevel);
             break;
     }
 };
@@ -81,12 +84,11 @@ var createChildProxyController = function(port, IP)
 {
     mainProxyserver = cp.fork(mainProxyServerJS, [port, IP] );
     mainProxyserver.on('message', processMsgFromChildren);
-
 }
 
 createChildRedisProxy();
 createChildWebAccServer(jadeServerPort, jadeServerIP);
 createChildProxyController(proxyPortToListenOn, proxyIPtoListenOn);
 
-
+logger.enableProcLogging(logger.defaultReportingPeriod, false, logger.quietLevel, 'RootProcess  ', true, true);
 

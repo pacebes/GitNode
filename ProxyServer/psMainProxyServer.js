@@ -13,20 +13,21 @@ var domain = require('domain');
 var os = require('os');
 var util = require('util');
 var fs = require('fs');
-var sys = require('sys')
-var childp = require('child_process');
+var sys = require('sys');
 var logger = require('./psLogger.js');
 var acc = require('./psAccounting');
 var auth = require("./psProxyAuth.js");
 var numCPUs = os.cpus().length;
-var rssWarn = (50 * 1024 * 1024), heapWarn = (50 * 1024 * 1024);
+var rssWarn = (80 * 1024 * 1024), heapWarn = (80 * 1024 * 1024);
 var reportingPeriod = 30000;
 var workers = {};
 
 var sendProcessMessage = function(request) {
     // Save information
-    process.send({cmd: "account", url: request.url, userIP: request.connection.remoteAddress,
+    if (typeof process.send === 'function') {
+        process.send({cmd: "account", url: request.url, userIP: request.connection.remoteAddress,
         method: request.method });
+    }
 }
 
 var sendRedisMessage = function(request) {
@@ -35,57 +36,6 @@ var sendRedisMessage = function(request) {
     acc.sendMessage(acc.accountingChannel, JSON.stringify(messageToSend));
 }
 
-var getLinuxCPUUsage = function(cb){
-
-    var procFile= "/proc/" + process.pid + "/stat";
-
-    logger.logFunction('Reading the process file: ' + procFile, logger.quietLevel);
-
-    fs.readFile("/proc/" + process.pid + "/stat", function(err, data){
-        if (err) {
-            logger.logFunction('Error reading /proc file', err, logger.quietLevel);
-            return;
-        }
-
-        console.log('-----', data);
-
-        var elems = data.toString().split(' ');
-        var utime = parseInt(elems[13]);
-        var stime = parseInt(elems[14]);
-
-        cb(utime + stime);
-    });
-}
-
-var logMacCPUUsage = function () {
-
-    //
-    childp.exec('ps -o "pid,===,%cpu" -p 21514,37966', function (error, stdout, stderr) {
-        sys.print('stderr: ' + stderr);
-        if (error !== null) {
-            console.log('exec error: ' + error);
-        }
-        else
-            console.log(stdout);
-    });
-}
-
-var logLinuxCPUUsage = function () {
-
-     setInterval(function(){
-            getLinuxCPUUsage(function(startTime){
-                setTimeout(function(){
-                    getLinuxCPUUsage(function(endTime){
-                        var delta = endTime - startTime;
-                        // On POSIX systems, there are 10000 ticks per second (per processor)
-                        var percentage = 100 * (delta / 10000);
-
-                        console.log('CPU usage: ', percentage);
-                    });
-                }, 1000);
-            });
-        }, reportingPeriod);
-}
 
 var masterProcess_on = function () {
 
@@ -107,7 +57,11 @@ var masterProcess_on = function () {
     });
 
     process.on('SIGCHLD', function () {
-        logger.logFunction('MainProxyServer server got SIGCHLD', logger.quietLevel);
+        //
+        // The way to get the CPU usage in a mac is through a unix command ("ps ..."
+        // That means that whenever this command ends this function is called
+        //
+        // logger.logFunction('MainProxyServer server got SIGCHLD', logger.quietLevel);
     });
 
     process.on('SIGINT', function () {
@@ -132,11 +86,11 @@ var childProcess_on = function () {
     process.on('error', function (err) {
         logger.logFunction('ProxyServer process error: ' + err, logger.quietLevel);
     });
-/*
+
     process.on('uncaughtException', function (err) {
         logger.logFunction('ProxyServer process caught exception: ' + err, logger.quietLevel);
     });
-*/
+
     process.on('exit', function () {
         logger.logFunction('ProxyServer process received exit', logger.quietLevel);
     });
@@ -144,10 +98,6 @@ var childProcess_on = function () {
     // Just for enjoying: some process control
     process.on('SIGTSTP', function () {
         logger.logFunction('Proxy server got SIGTSTP. Please press Control-C', logger.quietLevel);
-    });
-
-    process.on('SIGCHLD', function () {
-        logger.logFunction('Proxy server got SIGCHLD', logger.quietLevel);
     });
 
     process.on('SIGINT', function () {
@@ -178,16 +128,13 @@ var processWorkerMessages = function(message)
     logger.logFunction('processWorkerMessages Message', message, logger.verboseLevel);
 
     switch (message.cmd) {
-        case "reportMem":
+        case "reportProcData":
             if(message.memory.rss > rssWarn) {
-                logger.logFunction('Worker ' + message.process + ' using too much memory.', logger.quietLevel);
+                logger.logFunction('Worker ' + message.process + ' using too much memory.', logger.verboseLevel);
             }
-
-            logger.logFunction('Worker ' + message.process +
-                ' RSSmem: ' + message.memory.rss + ' (' + (message.memory.rss - workers[message.process].lastMemory.rss) + ')' +
-                ' heapTot: ' + message.memory.heapTotal + ' (' + (message.memory.heapTotal - workers[message.process].lastMemory.heapTotal) + ')' +
-                ' heapUsed: ' + message.memory.heapUsed + ' (' + (message.memory.heapUsed - workers[message.process].lastMemory.heapUsed) + ')',
-                logger.quietLevel);
+            if(message.memory.heapTotal > heapWarn) {
+                logger.logFunction('Worker ' + message.process + ' using too much heapTotal.', logger.verboseLevel);
+            }
 
             workers[message.process].lastMemory =  {rss: message.memory.rss,heapTotal: message.memory.heapTotal,
                 heapUsed: message.memory.heapUsed};
@@ -197,17 +144,21 @@ var processWorkerMessages = function(message)
         case "account":
             logger.logFunction('Forwarding account message to parent', logger.verboseLevel);
             // Let's forward the message to the parent
-            process.send(message);
+            if (typeof process.send === 'function') {
+                process.send(message);
+            }
             break
 
         case "ready":
             logger.logFunction('Forwarding ready message to parent', logger.verboseLevel);
             // Let's forward the message to the parent
-            process.send(message);
+            if (typeof process.send === 'function') {
+                process.send(message);
+            }
             break
 
         default:
-            logger.logFunction('Cluster master: received an unknown message', logger.quietLevel);
+            logger.logFunction('Cluster master: received an unknown message',message, logger.quietLevel);
             break;
     }
 }
@@ -220,6 +171,7 @@ var beAServer = function (proxyServerPort, proxyServerIP) {
     acc.init (true);
     acc.initProducer ();
     childProcess_on();
+
     //
     // Web server
     //
@@ -247,6 +199,7 @@ var beAServer = function (proxyServerPort, proxyServerIP) {
             path: parsedURL.path,
             method: request.method,
             headers: request.headers,
+            closeIdleConnections: true
         };
         //
         // Exception control in the access to origin through domains
@@ -264,7 +217,11 @@ var beAServer = function (proxyServerPort, proxyServerIP) {
         proxyToOriginDomain.on('error', function(er) {
             logger.logFunction('Caught error on proxyToOrigin domain! Method (' + proxy_request.method + ') ' +
                 proxy_request._headers.host+proxy_request.path, logger.quietLevel);
-            logger.logFunction('Error on proxyToOrigin domain', er, logger.verboseLevel);
+            logger.logFunction('Error on proxyToOrigin domain: ' + er.code, logger.quietLevel);
+            logger.logFunction('Detailed error', er, logger.verboseLevel);
+
+            // We send an OK back and end the connection
+            response.end('Error');
         });
 
         //
@@ -287,8 +244,10 @@ var beAServer = function (proxyServerPort, proxyServerIP) {
 
     }).listen(proxyServerPort, proxyServerIP);
 
-    // We are ready to serve (message to Master)
-    process.send({cmd: "ready", origin: "ProxyServer on port " + proxyServerPort + " IP " + proxyServerIP, pid: process.pid });
+    if (typeof process.send === 'function') {
+        // We are ready to serve (message to Master)
+        process.send({cmd: "ready", origin: "ProxyServer on port " + proxyServerPort + " IP " + proxyServerIP, pid: process.pid });
+    }
 
     logger.logFunction('Proxy server running on http://' + proxyServerIP + ':' + proxyServerPort + '/', logger.verboseLevel);
 
@@ -320,18 +279,20 @@ var initProcess = function (port, ip) {
             createWorker();
         }
 
-        // We are ready to serve (message to Master)
-        process.send({cmd: "ready", origin: "Proxy Cluster", pid: process.pid });
+        if (typeof process.send === 'function') {
+            // We are ready to serve (message to Master)
+            process.send({cmd: "ready", origin: "Proxy Cluster", pid: process.pid });
+        }
+        logger.enableProcLogging(reportingPeriod, false, logger.quietLevel, 'ProxyCluster ', true, true);
+
     }
     else {
 
-        logger.logFunction("Let's create a server on port " + port + ', IP ' + ip, logger.verboseLevel);
+        logger.logFunction("Let's create a proxy server on port " + port + ', IP ' + ip, logger.verboseLevel);
+
         beAServer(port, ip);
 
-        setInterval(function report(){
-            process.send({cmd: "reportMem", memory: process.memoryUsage(), process: process.pid});
-        }, reportingPeriod)
-
+        logger.enableProcLogging(reportingPeriod, true, logger.quietLevel, 'Worker parent', true, true);
 
     }
 }
@@ -341,4 +302,5 @@ process.argv.forEach(function (val, index, array) {
     logger.logFunction('Parameter ' + index + ': ' + val, logger.verboseLevel);
 });
 
+http.globalAgent.maxSockets = 2000;
 initProcess(process.argv[2],process.argv[3]);
