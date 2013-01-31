@@ -5,6 +5,8 @@
  * Time: 15:33
  * To change this template use File | Settings | File Templates.
  */
+"use strict";
+
 var posix = require ('posix');
 var logger = require('./psLogger.js');
 var acc = require('./psAccounting.js');
@@ -22,11 +24,11 @@ var processMasterMessage = function (message) {
 
     switch (message.cmd) {
         case 'init':
-            logger.logFunction('AccServer children received the init message', message , logger.verboseLevel);
+            logger.logFunction('AccServer children received the init message', message, logger.verboseLevel);
             break;
 
         case 'account':
-            logger.logFunction('AccServer children received the account message', message , logger.verboseLevel);
+            logger.logFunction('AccServer children received the account message', message, logger.verboseLevel);
             acc.saveProxyInformation(message.url, message.userIP, message.method);
             break;
 
@@ -34,7 +36,7 @@ var processMasterMessage = function (message) {
             logger.logFunction('AccServer children: received an unknown message', message, logger.quietLevel);
             break;
     }
-}
+};
 
 var processRedisChannelMessage = function (channel, message) {
 
@@ -50,17 +52,22 @@ var processRedisChannelMessage = function (channel, message) {
         logger.logFunction('AccServer children: cannot convert to JSON the message: ', message, logger.quietLevel);
     }
 
-}
+};
 
-var checkParentDeath = function() {
+var endProcess = function () {
+    acc.end();
+    acc.endConsumer();
+};
+
+var checkParentDeath = function () {
     var ppid = posix.getppid();
 
-    if ( ppid === 0 ) {
+    if (ppid === 0) {
         logger.logFunction('AccServer parent is dead', logger.quietLevel);
         endProcess();
         exit(1);
     }
-}
+};
 
 var process_on = function () {
 
@@ -101,34 +108,28 @@ var process_on = function () {
 
     // Check parent death
     setInterval(checkParentDeath, timePeriodToCheckParentDeath);
-
-}
-
-var endProcess = function () {
-    acc.end();
-    acc.endConsumer();
-}
+};
 
 var initProcess = function (textProcess) {
 
     // DB initialization
-    acc.init (true);
+    acc.init(true);
     acc.initConsumer();
     acc.subscribeToChannel(acc.accountingChannel);
     acc.callMeOnMessage(processRedisChannelMessage);
 
     process_on();
 
-    logger.logFunction (textProcess + ' (PID ' + process.pid + ') is ready to store Account information', logger.verboseLevel);
+    logger.logFunction(textProcess + ' (PID ' + process.pid + ') is ready to store Account information', logger.verboseLevel);
 
     if (typeof process.send === 'function') {
         // We are ready to serve (message to Master)
-        process.send({cmd: "ready", origin: textProcess, pid: process.pid })
+        process.send({cmd:"ready", origin:textProcess, pid:process.pid });
     }
 
     logger.enableProcLogging(logger.defaultReportingPeriod, false, logger.quietLevel, 'RedisProxy   ', true, true);
 
-}
+};
 
 // print process.argv
 process.argv.forEach(function (val, index, array) {

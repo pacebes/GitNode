@@ -5,6 +5,8 @@
  * Time: 09:40
  * To change this template use File | Settings | File Templates.
  */
+"use strict";
+
 var http = require('http');
 var url = require('url');
 var fs = require( 'fs' );
@@ -13,12 +15,15 @@ var childP = require('child_process');
 var moment = require('moment');
 
 //
-// Loggin
+// Logging
 //
 var enableLog = true, gLogLevel = 5;
 var logIntervalID;
 var procLastData;
-exports.debugLevel = 5, exports.verboseLevel = 6, exports.quietLevel = 1, exports.muteLevel = 0;
+exports.debugLevel = 5;
+exports.verboseLevel = 6;
+exports.quietLevel = 1;
+exports.muteLevel = 0;
 exports.defaultReportingPeriod = 30000;
 
 var generateMemoryLog = function () {
@@ -33,18 +38,18 @@ var generateMemoryLog = function () {
     procLastData.memory = currentMemoryUsage;
 
     return memoryTextInformation;
-}
+};
 
-var generateCPULog = function(reportToParent, verbosityLevel, initialText) {
+var generateCPULog = function (reportToParent, verbosityLevel, initialText) {
 
     var commandToExecute, cpuUsage = "0";
     var childOptions = {
-        encoding: 'utf8',
-        timeout: 5000,   // It shouldn't take more than 5 seconds.
-        maxBuffer: 200*1024,
-        killSignal: 'SIGTERM',
-        cwd: null,
-        env: null };
+        encoding:'utf8',
+        timeout:5000, // It shouldn't take more than 5 seconds.
+        maxBuffer:200 * 1024,
+        killSignal:'SIGTERM',
+        cwd:null,
+        env:null };
 
     commandToExecute = 'ps -o %cpu -p ' + process.pid + ' | tail -1';
     exports.logFunction('Command to execute: ' + commandToExecute, exports.verboseLevel);
@@ -64,10 +69,10 @@ var generateCPULog = function(reportToParent, verbosityLevel, initialText) {
         }
     });
 
-}
+};
 
 
-var logProcUse = function(reportToParent, verbosityLevel, initialText, cpuReporting, memoryReporting) {
+var logProcUse = function (reportToParent, verbosityLevel, initialText, cpuReporting, memoryReporting) {
 
     var logText;
     logText = initialText + '.';
@@ -82,22 +87,22 @@ var logProcUse = function(reportToParent, verbosityLevel, initialText, cpuReport
     else {
         exports.logFunction(logText, verbosityLevel);
         if (reportToParent === true) {
-            process.send({cmd: "reportProcData", memory: procLastData.memory, CPU: procLastData.cpuUsage,
-                process: process.pid});
+            process.send({cmd:"reportProcData", memory:procLastData.memory, CPU:procLastData.cpuUsage,
+                process:process.pid});
         }
     }
-}
+};
 
 
-var getLinuxCPUUsage = function(cb){
+var getLinuxCPUUsage = function (cb) {
 
-    var procFile= "/proc/" + process.pid + "/stat";
+    var procFile = "/proc/" + process.pid + "/stat";
 
-    logger.logFunction('Reading the process file: ' + procFile, logger.quietLevel);
+    exports.logFunction('Reading the process file: ' + procFile, logger.quietLevel);
 
-    fs.readFile("/proc/" + process.pid + "/stat", function(err, data){
+    fs.readFile("/proc/" + process.pid + "/stat", function (err, data) {
         if (err) {
-            logger.logFunction('Error reading /proc file', err, logger.quietLevel);
+            exports.logFunction('Error reading /proc file', err, logger.quietLevel);
             return;
         }
 
@@ -109,14 +114,14 @@ var getLinuxCPUUsage = function(cb){
 
         cb(utime + stime);
     });
-}
+};
 
 var logLinuxCPUUsage = function () {
 
-    setInterval(function(){
-        getLinuxCPUUsage(function(startTime){
-            setTimeout(function(){
-                getLinuxCPUUsage(function(endTime){
+    setInterval(function () {
+        getLinuxCPUUsage(function (startTime) {
+            setTimeout(function () {
+                getLinuxCPUUsage(function (endTime) {
                     var delta = endTime - startTime;
                     // On POSIX systems, there are 10000 ticks per second (per processor)
                     var percentage = 100 * (delta / 10000);
@@ -126,26 +131,26 @@ var logLinuxCPUUsage = function () {
             }, 1000);
         });
     }, reportingPeriod);
-}
+};
 
 
-exports.setLoggingLevel = function ( logEnabled, logLevel) {
+exports.setLoggingLevel = function (logEnabled, logLevel) {
     enableLog = logEnabled;
     gLogLevel = logLevel;
-}
+};
 
-exports.timeStamp = function() {
+exports.timeStamp = function () {
     return(Date.now());
-}
+};
 
-exports.humanTimeStamp = function() {
+exports.humanTimeStamp = function () {
 
     return (Date(exports.timeStamp()).toString());
-}
+};
 
-exports.logTimeStamp = function() {
+exports.logTimeStamp = function () {
     return(moment().format());
-}
+};
 
 //
 // Function for login purposes only
@@ -154,7 +159,7 @@ exports.logFunction = function (meaning, objectToShow, fLogLevel) {
 
     var isThereAnObjectToShow;
 
-    if (typeof fLogLevel === 'undefined') {
+    if (typeof (fLogLevel) === 'undefined') {
         // only two paramaters were passed, so web have to rerder
         fLogLevel = objectToShow;
 
@@ -166,7 +171,7 @@ exports.logFunction = function (meaning, objectToShow, fLogLevel) {
     }
 
     // If not logLevel let's say it is verbose
-    fLogLevel = (typeof fLogLevel === 'undefined') ? exports.verboseLevel : fLogLevel;
+    fLogLevel = (typeof(fLogLevel) === 'undefined') ? exports.verboseLevel : fLogLevel;
 
     if ((enableLog === true) && (fLogLevel <= gLogLevel)) {
 
@@ -190,22 +195,23 @@ exports.printURL = function (urlToPrint) {
 };
 
 
-exports.enableProcLogging = function(reportingPeriod, reportToParent, verbosityLevel, initialText, cpuReporting, memoryReporting) {
-    procLastData = { cpuUsage: "XXX", memory: {rss: 0, heapTotal: 0, heapUsed: 0} };
+exports.enableProcLogging = function (reportingPeriod, reportToParent, verbosityLevel, initialText, cpuReporting, memoryReporting) {
+    procLastData = { cpuUsage:"XXX", memory:{rss:0, heapTotal:0, heapUsed:0} };
     logIntervalID = setInterval(logProcUse, reportingPeriod, reportToParent, verbosityLevel, initialText, cpuReporting, memoryReporting);
-}
+};
 
-exports.disableProcLogging = function() {
+exports.disableProcLogging = function () {
     clearInterval(logIntervalID);
-    procLastData = { cpuUsage: "XXX", memory: {rss: 0, heapTotal: 0, heapUsed: 0} };
-}
+    procLastData = { cpuUsage:"XXX", memory:{rss:0, heapTotal:0, heapUsed:0} };
+};
 
 //
 exports.init = function () {
 
-}
+};
 
 //
 exports.end = function () {
 
-}
+};
+

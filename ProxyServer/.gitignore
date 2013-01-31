@@ -19,3 +19,5 @@ node.log
 openPorts.txt
 outputs.file
 process.sh
+monitor
+monitor.sh

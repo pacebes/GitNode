@@ -1,3 +1,5 @@
+"use strict";
+
 var cluster = require('cluster');
 var cp = require('child_process');
 var logger = require('./psLogger.js');
@@ -20,7 +22,7 @@ var argv = require('optimist')
         },
         proxyServerIP : {
             demand : false,
-            alias : 'pip',
+            alias : 'pi',
             description :  'Define the port at which the proxy server will listen',
             default : proxyIPtoListenOn
         },
@@ -42,10 +44,9 @@ var argv = require('optimist')
 proxyIPtoListenOn = argv.proxyServerIP; proxyPortToListenOn = argv.proxyServerPort;
 jadeServerIP = argv.webServerIP; jadeServerPort = argv.webServerPort;
 
-
 var processMsgFromChildren = function(message) {
 
-    if (typeof(message) === 'undefined') {
+    if ( typeof(message) === 'undefined') {
         return;
     }
 
@@ -61,7 +62,12 @@ var processMsgFromChildren = function(message) {
             logger.logFunction('Forwarding account message to the logger', logger.verboseLevel);
             // Let's forward the message to the parent
             redisProxyChild.send(message);
-            break
+            break;
+
+        case "ping":
+            logger.logFunction('Ping received from ' + message.origin, logger.verboseLevel);
+            // Let's forward the message to the parent
+            break;
 
         default:
             logger.logFunction('Master: received an unknown message', message, logger.quietLevel);
@@ -69,22 +75,63 @@ var processMsgFromChildren = function(message) {
     }
 };
 
+var process_on = function () {
+
+    process.on('error', function (err) {
+        logger.logFunction('MainProxyServer error: ' + err, logger.quietLevel);
+    });
+
+    process.on('uncaughtException', function (err) {
+        logger.logFunction('MainProxyServer caught exception: ' + err, logger.quietLevel);
+    });
+
+    process.on('exit', function () {
+        logger.logFunction('MainProxyServer received exit', logger.quietLevel);
+    });
+
+    process.on('SIGCHLD', function () {
+        // external shell scripts generate a SIGCHLD when end executions
+        // logger.logFunction('MainProxyServer got SIGCHLD', logger.quietLevel);
+    });
+
+    // Just for enjoying: some process control
+    process.on('SIGTSTP', function () {
+        logger.logFunction('MainProxyServer got SIGTSTP. Please press Control-C', logger.quietLevel);
+    });
+
+    process.on('SIGINT', function () {
+        logger.logFunction('MainProxyServer got SIGINT', logger.quietLevel);
+        process.exit(1);
+    });
+
+    process.on('SIGKILL', function () {
+        logger.logFunction('MainProxyServer got SIGKILL', logger.quietLevel);
+        process.exit(1);
+    });
+
+    process.on('SIGHUP', function () {
+        logger.logFunction('MainProxyServer got SIGHUP', logger.quietLevel);
+        process.exit(1);
+    });
+};
+
 
 var createChildRedisProxy = function () {
     redisProxyChild = cp.fork(redisProxyJS);
     redisProxyChild.on('message', processMsgFromChildren);
-}
+};
 
-var createChildWebAccServer = function( port, IP) {
-    accessWebChild = cp.fork(accessWebJS, [port, IP] );
+var createChildWebAccServer = function (port, IP) {
+    accessWebChild = cp.fork(accessWebJS, [port, IP]);
     accessWebChild.on('message', processMsgFromChildren);
-}
+};
 
-var createChildProxyController = function(port, IP)
-{
-    mainProxyserver = cp.fork(mainProxyServerJS, [port, IP] );
+var createChildProxyController = function (port, IP) {
+    mainProxyserver = cp.fork(mainProxyServerJS, [port, IP]);
     mainProxyserver.on('message', processMsgFromChildren);
-}
+};
+
+process_on();
 
 createChildRedisProxy();
 createChildWebAccServer(jadeServerPort, jadeServerIP);

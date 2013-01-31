@@ -5,6 +5,7 @@
  * Time: 11:19
  * To change this template use File | Settings | File Templates.
  */
+"use strict";
 
 var cluster = require('cluster');
 var http = require('http');
@@ -22,19 +23,19 @@ var rssWarn = (80 * 1024 * 1024), heapWarn = (80 * 1024 * 1024);
 var reportingPeriod = 30000;
 var workers = {};
 
-var sendProcessMessage = function(request) {
+var sendProcessMessage = function (request) {
     // Save information
     if (typeof process.send === 'function') {
-        process.send({cmd: "account", url: request.url, userIP: request.connection.remoteAddress,
-        method: request.method });
+        process.send({cmd:"account", url: request.url, userIP: request.connection.remoteAddress,
+            method:request.method });
     }
-}
+};
 
-var sendRedisMessage = function(request) {
+var sendRedisMessage = function (request) {
 
-    var messageToSend = {cmd: "account", url: request.url, userIP: request.connection.remoteAddress, method: request.method };
+    var messageToSend = {cmd:"account", url:request.url, userIP:request.connection.remoteAddress, method:request.method };
     acc.sendMessage(acc.accountingChannel, JSON.stringify(messageToSend));
-}
+};
 
 
 var masterProcess_on = function () {
@@ -78,7 +79,7 @@ var masterProcess_on = function () {
         logger.logFunction('MainProxyServer server got SIGHUP', logger.quietLevel);
         process.exit(1);
     });
-}
+};
 
 
 var childProcess_on = function () {
@@ -114,9 +115,7 @@ var childProcess_on = function () {
         logger.logFunction('Proxy server got SIGHUP', logger.quietLevel);
         process.exit(1);
     });
-}
-
-
+};
 
 var processWorkerMessages = function(message)
 {
@@ -147,7 +146,7 @@ var processWorkerMessages = function(message)
             if (typeof process.send === 'function') {
                 process.send(message);
             }
-            break
+            break;
 
         case "ready":
             logger.logFunction('Forwarding ready message to parent', logger.verboseLevel);
@@ -155,133 +154,169 @@ var processWorkerMessages = function(message)
             if (typeof process.send === 'function') {
                 process.send(message);
             }
-            break
+            break;
 
         default:
             logger.logFunction('Cluster master: received an unknown message',message, logger.quietLevel);
             break;
     }
-}
+};
 
 var beAServer = function (proxyServerPort, proxyServerIP) {
 
     var counterToShareMessages = 0;
 
     // DB initialization
-    acc.init (true);
-    acc.initProducer ();
+    acc.init(true);
+    acc.initProducer();
     childProcess_on();
 
     //
     // Web server
     //
-    http.createServer(function(request, response) {
-
-        if ( auth.checkProxyRequest(request, response) === false) {
+    http.createServer(function (request, response) {
+        if (auth.checkProxyRequest(request, response) === false) {
             return;
         }
 
         // Sharing ways to send messages
         counterToShareMessages += 1;
 
-        if ( (counterToShareMessages % 2) === 0 ) {
+        if ((counterToShareMessages % 2) === 0) {
             sendProcessMessage(request);
         }
         else {
             sendRedisMessage(request);
         }
 
-        var parsedURL = url.parse(request.url, true);
-        var opts = {
-            host: parsedURL.host,
-            protocol: parsedURL.protocol,
-            port: parsedURL.port,
-            path: parsedURL.path,
-            method: request.method,
-            headers: request.headers,
-            closeIdleConnections: true
-        };
+        var parsedURL = url.parse(request.url, true),
+            opts = {
+                host:parsedURL.host,
+                hostname:parsedURL.hostname,
+                protocol:parsedURL.protocol,
+                port:parsedURL.port,
+                path:parsedURL.path,
+                method:request.method,
+                headers:request.headers,
+                closeIdleConnections:true
+            };
+
         //
         // Exception control in the access to origin through domains
         //
         var proxy_request;
-        // create a domain for proxy-to-origin client
-        var proxyToOriginDomain = domain.create();
 
-        proxyToOriginDomain.run(function() {
-            logger.logFunction('Lets open an httpRequest to' + opts, logger.verboseLevel);
-            proxy_request = http.request(opts);
-        });
+        /*
+         // create a domain for proxy-to-origin client
+         var proxyToOriginDomain = domain.create();
 
-        // Proxy to Origin Domain error control
-        proxyToOriginDomain.on('error', function(er) {
-            logger.logFunction('Caught error on proxyToOrigin domain! Method (' + proxy_request.method + ') ' +
-                proxy_request._headers.host+proxy_request.path, logger.quietLevel);
-            logger.logFunction('Error on proxyToOrigin domain: ' + er.code, logger.quietLevel);
-            logger.logFunction('Detailed error', er, logger.verboseLevel);
+         proxyToOriginDomain.run(function() {
+         logger.logFunction('Lets open an httpRequest to ', opts, logger.verboseLevel);
+         proxy_request = http.request(opts);
+         });
 
-            // We send an OK back and end the connection
-            response.end('Error');
-        });
+         // Proxy to Origin Domain error control
+         proxyToOriginDomain.on('error', function(er) {
+         logger.logFunction('Caught error on proxyToOrigin domain! Method (' + proxy_request.method + ') ' +
+         proxy_request._headers.host+proxy_request.path, logger.quietLevel);
+         logger.logFunction('Error on proxyToOrigin domain: ' + er.code, logger.quietLevel);
+         logger.logFunction('Detailed error', er, logger.verboseLevel);
+         //
+         // We send an OK back and end the connection (optional
+         //
+         // response.end('Error');
+         });
+         */
 
-        //
+        proxy_request = http.request(opts);
+
+        /*
+         proxy_request.setTimeout(0);
+         proxy_request.setNoDelay(true);
+         proxy_request.setSocketKeepAlive(true);
+
+         proxy_request.on('socket', function(socket) {
+         return socket.on('error', function(error) {
+         return log.error("Socket Error: " + error);
+         });
+         });
+         */
         // Let's pipe both sides.
         //
         proxy_request.on('response', function (proxy_response) {
+            logger.logFunction('Proxy http request to origin. Response received: ', proxy_response, logger.verboseLevel);
             //
             // NO 'Keep-Alive' Connection
             //
             proxy_response.headers.connection = 'close';
+            proxy_response.pipe(response);
+            response.writeHead(proxy_response.statusCode, proxy_response.headers);
 
             logger.logFunction('Headers', JSON.stringify(proxy_response.headers), logger.verboseLevel);
-            proxy_response.pipe(response);
             logger.logFunction('Piping webServer To client', logger.verboseLevel);
-            response.writeHead(proxy_response.statusCode, proxy_response.headers);
+        });
+
+
+        // Control Error
+        proxy_request.on('error', function (er) {
+            logger.logFunction('Caught error on proxy_request method (' + proxy_request.method + ') ' +
+                proxy_request._headers.host + proxy_request.path, logger.quietLevel);
+            logger.logFunction('Error on proxy_request: ' + er.code, logger.quietLevel);
+            logger.logFunction('Detailed error', er, logger.verboseLevel);
+            //
+            // We send an OK back and end the connection (optional
+            //
+            // response.end('Error');
         });
 
         logger.logFunction('Piping client to webServer', logger.verboseLevel);
         request.pipe(proxy_request);
 
+        if ((counterToShareMessages % 10) === 0) {
+            logger.logFunction('ProxyServer request number ' + counterToShareMessages, logger.quietLevel);
+        }
+
+
     }).listen(proxyServerPort, proxyServerIP);
 
     if (typeof process.send === 'function') {
         // We are ready to serve (message to Master)
-        process.send({cmd: "ready", origin: "ProxyServer on port " + proxyServerPort + " IP " + proxyServerIP, pid: process.pid });
+        process.send({cmd:"ready", origin:"ProxyServer on port " + proxyServerPort + " IP " + proxyServerIP, pid:process.pid });
     }
 
     logger.logFunction('Proxy server running on http://' + proxyServerIP + ':' + proxyServerPort + '/', logger.verboseLevel);
 
+};
 
-}
-
-function createWorker() {
-    var worker = cluster.fork()
+var createWorker = function () {
+    var worker = cluster.fork();
 
     logger.logFunction('MainProxyServer: created worker: ' + worker.pid, logger.verboseLevel)
 
-    workers[worker.process.pid] = {worker: worker, lastMemory: {rss: 0, heapTotal: 0, heapUsed: 0} };
+    workers[worker.process.pid] = {worker:worker, lastMemory:{rss:0, heapTotal:0, heapUsed:0} };
     worker.on('message', processWorkerMessages);
-}
+};
 
 var initProcess = function (port, ip) {
+    var i;
 
-    if(cluster.isMaster) {
+    if (cluster.isMaster) {
         logger.logFunction('Just out of curiosity. Number of CPUs: ' + os.cpus().length, logger.verboseLevel);
         logger.logFunction('Master cluster PID: ' + process.pid, logger.verboseLevel);
 
         masterProcess_on();
 
-        cluster.on('death', function(worker) {
+        cluster.on('death', function (worker) {
             logger.logFunction('Worker ' + worker.pid + ' died', logger.quietLevel);
         });
 
-        for(var i=0; i< (numCPUs-1); i++) {
+        for (i = 0; i < (numCPUs - 1); i++) {
             createWorker();
         }
 
         if (typeof process.send === 'function') {
             // We are ready to serve (message to Master)
-            process.send({cmd: "ready", origin: "Proxy Cluster", pid: process.pid });
+            process.send({cmd:"ready", origin: "Proxy Cluster", pid: process.pid });
         }
         logger.enableProcLogging(reportingPeriod, false, logger.quietLevel, 'ProxyCluster ', true, true);
 
@@ -292,15 +327,15 @@ var initProcess = function (port, ip) {
 
         beAServer(port, ip);
 
-        logger.enableProcLogging(reportingPeriod, true, logger.quietLevel, 'Worker parent', true, true);
+        logger.enableProcLogging(reportingPeriod, true, logger.quietLevel, 'Worker child ', true, true);
 
     }
-}
+};
 
 // print process.argv
 process.argv.forEach(function (val, index, array) {
     logger.logFunction('Parameter ' + index + ': ' + val, logger.verboseLevel);
 });
 
-http.globalAgent.maxSockets = 2000;
+// http.globalAgent.maxSockets = 20000;
 initProcess(process.argv[2],process.argv[3]);

@@ -1,3 +1,5 @@
+"use strict";
+
 var acc = require('./psAccounting.js');
 
 
@@ -15,6 +17,7 @@ process.on('SIGKILL', function () {
 	console.log('Got SIGKILL. Bye');
 	process.exit(1);
 });
+
 /*
 process.on('uncaughtException', function (err) {
 	console.log('Caught exception: ' + err);
