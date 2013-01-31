@@ -272,7 +272,7 @@ var beAServer = function (proxyServerPort, proxyServerIP) {
         logger.logFunction('Piping client to webServer', logger.verboseLevel);
         request.pipe(proxy_request);
 
-        if ((counterToShareMessages % 10) === 0) {
+        if ((counterToShareMessages % 100) === 0) {
             logger.logFunction('ProxyServer request number ' + counterToShareMessages, logger.quietLevel);
         }
 

@@ -147,7 +147,7 @@ var createASimpleWebServer = function (port, hostName) {
         }
         else {
             requestNumber += 1;
-            if ((requestNumber % 10) === 0) {
+            if ((requestNumber % 100) === 0) {
                 logger.logFunction('MainAccView request served: ' + requestNumber, logger.quietLevel);
                 logger.logFunction('MainAccView request served: ', parsedURL, logger.verboseLevel);
             }
