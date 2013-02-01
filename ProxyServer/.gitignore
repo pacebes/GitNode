@@ -10,6 +10,7 @@ output.file
 stacks.out
 v8.log
 .idea
+.idea/dictionaries/pacebes.xml
 abOutput
 .gitignore
 .DS_Store
