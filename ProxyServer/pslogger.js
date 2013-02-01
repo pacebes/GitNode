@@ -167,7 +167,7 @@ exports.logFunction = function (meaning, objectToShow, fLogLevel) {
         isThereAnObjectToShow = false;
     }
     else {
-        isThereAnObjectToShow= true;
+        isThereAnObjectToShow = true;
     }
 
     // If not logLevel let's say it is verbose

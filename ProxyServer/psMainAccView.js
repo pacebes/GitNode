@@ -13,16 +13,16 @@ var fs = require('fs');
 var url = require('url');
 var http = require('http');
 var express = require('express');
-var defaultAutoRefreshTime = 600, autoRegenerationTime = 10;
-var outFileNamePrefix = './views/temporalJadeFile', outFileNameSuffix = '.txt',
+
+var defaultAutoRefreshTime = 600, autoRegenerationTime = 10,
+    outFileNamePrefix = './views/temporalJadeFile', outFileNameSuffix = '.txt',
     jadeRender = 'proxyUsage', jadeFileName = './views/' + jadeRender + '.jade';
-var appExpress;
-var jadeServerPort, jadeServerIP;
-var serverExpress;
-var httpSimpleServer;
-var indexContent;
-
-
+var appExpress,
+    serverExpress,
+    httpSimpleServer;
+var jadeServerPort, jadeServerIP,
+    indexContent,
+    psSSMaxConn = 1500;
 
 var giveMeJadeHeader = function (title, secondsAutoRefresh, urlToRefresh) {
     return (
@@ -52,7 +52,7 @@ var callMeWhenDatafileReady = function (outputFileName) {
 var generateBodyPart = function (secondsAutoRefresh, urlToRefresh) {
 
     // Let's generate the body data (UL + LI)
-    acc.printHmsetKeys('NODE_MRU', outFileNamePrefix + Date.now() + outFileNameSuffix,
+    acc.printHmsetKeys('NODE_MRU', acc.maxKeysToProcess, outFileNamePrefix + logger.logTimeStamp() + outFileNameSuffix,
         true, giveMeJadeHeader('Welcome to Proxy Web Page Usage', secondsAutoRefresh, urlToRefresh), callMeWhenDatafileReady);
 
 };
@@ -147,7 +147,7 @@ var createASimpleWebServer = function (port, hostName) {
         }
         else {
             requestNumber += 1;
-            if ((requestNumber % 100) === 0) {
+            if ((requestNumber % 1000) === 0) {
                 logger.logFunction('MainAccView request served: ' + requestNumber, logger.quietLevel);
                 logger.logFunction('MainAccView request served: ', parsedURL, logger.verboseLevel);
             }
@@ -155,7 +155,13 @@ var createASimpleWebServer = function (port, hostName) {
             res.writeHead(200, {'Content-Type':'text/html'});
             res.end(indexContent);
         }
-    }).listen(port, hostName, webServerListenCallback);
+    });
+
+    logger.logFunction('MainAccViewServer. We limit the maximum number or requests to ' + psSSMaxConn, logger.quietLevel);
+    // Let's limit the number of request
+    httpSimpleServer.maxConnections = psSSMaxConn;
+
+    httpSimpleServer.listen(port, hostName, webServerListenCallback);
 
     httpSimpleServer.on('error', function (er) {
         logger.logFunction('MainAccView web server error', er, logger.quietLevel);
@@ -167,9 +173,9 @@ var getJadeBody = function (port, IP, callbackFunction, param1, param2) {
 
     var callback,
         options = {
-        host:IP,
-        port:port,
-        path:'/'
+        host: IP,
+        port: port,
+        path: '/'
     };
 
     callback = function (response) {
@@ -190,6 +196,7 @@ var getJadeBody = function (port, IP, callbackFunction, param1, param2) {
         });
     };
 
+    logger.logFunction('Asking for the jade server page. Options: ', options, logger.verboseLevel);
     http.request(options, callback).end();
 
 };
@@ -223,7 +230,7 @@ var initExpressProcess = function(jadeServerPort, jadeServerIP, textProcess) {
         res.render(jadeRender);
     });
 
-    serverExpress.listen(jadeServerPort,jadeServerIP,expressListenCallback);
+    serverExpress.listen(jadeServerPort, jadeServerIP, expressListenCallback);
 };
 
 

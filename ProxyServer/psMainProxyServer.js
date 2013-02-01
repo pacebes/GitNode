@@ -18,10 +18,12 @@ var sys = require('sys');
 var logger = require('./psLogger.js');
 var acc = require('./psAccounting');
 var auth = require("./psProxyAuth.js");
-var numCPUs = os.cpus().length;
-var rssWarn = (80 * 1024 * 1024), heapWarn = (80 * 1024 * 1024);
-var reportingPeriod = 30000;
-var workers = {};
+var numCPUs = os.cpus().length,
+    rssWarn = (80 * 1024 * 1024), heapWarn = (80 * 1024 * 1024),
+    reportingPeriod = 30000,
+    psMaxConn = 500,
+    workers = {},
+    useRedisMessages = false;
 
 var sendProcessMessage = function (request) {
     // Save information
@@ -32,9 +34,16 @@ var sendProcessMessage = function (request) {
 };
 
 var sendRedisMessage = function (request) {
+    var messageToSend;
 
-    var messageToSend = {cmd:"account", url:request.url, userIP:request.connection.remoteAddress, method:request.method };
-    acc.sendMessage(acc.accountingChannel, JSON.stringify(messageToSend));
+    if (useRedisMessages === true) {
+        messageToSend = {cmd: "account", url: request.url, userIP: request.connection.remoteAddress, method: request.method };
+        acc.sendMessage(acc.accountingChannel, JSON.stringify(messageToSend));
+    }
+    else {
+        // We don't trust the redis API. It looks a bit unstable
+        sendProcessMessage(request);
+    }
 };
 
 
@@ -164,17 +173,21 @@ var processWorkerMessages = function(message)
 
 var beAServer = function (proxyServerPort, proxyServerIP) {
 
-    var counterToShareMessages = 0;
+    var counterToShareMessages = 0,
+        httpProxyServer;
 
-    // DB initialization
-    acc.init(true);
-    acc.initProducer();
+    if (useRedisMessages === true) {
+        // DB initialization
+        acc.init(true);
+        acc.initProducer();
+    }
+
     childProcess_on();
 
     //
     // Web server
     //
-    http.createServer(function (request, response) {
+    httpProxyServer = http.createServer(function (request, response) {
         if (auth.checkProxyRequest(request, response) === false) {
             return;
         }
@@ -190,7 +203,7 @@ var beAServer = function (proxyServerPort, proxyServerIP) {
         }
 
         var parsedURL = url.parse(request.url, true),
-            opts = {
+        opts = {
                 host:parsedURL.host,
                 hostname:parsedURL.hostname,
                 protocol:parsedURL.protocol,
@@ -206,41 +219,8 @@ var beAServer = function (proxyServerPort, proxyServerIP) {
         //
         var proxy_request;
 
-        /*
-         // create a domain for proxy-to-origin client
-         var proxyToOriginDomain = domain.create();
-
-         proxyToOriginDomain.run(function() {
-         logger.logFunction('Lets open an httpRequest to ', opts, logger.verboseLevel);
-         proxy_request = http.request(opts);
-         });
-
-         // Proxy to Origin Domain error control
-         proxyToOriginDomain.on('error', function(er) {
-         logger.logFunction('Caught error on proxyToOrigin domain! Method (' + proxy_request.method + ') ' +
-         proxy_request._headers.host+proxy_request.path, logger.quietLevel);
-         logger.logFunction('Error on proxyToOrigin domain: ' + er.code, logger.quietLevel);
-         logger.logFunction('Detailed error', er, logger.verboseLevel);
-         //
-         // We send an OK back and end the connection (optional
-         //
-         // response.end('Error');
-         });
-         */
-
         proxy_request = http.request(opts);
 
-        /*
-         proxy_request.setTimeout(0);
-         proxy_request.setNoDelay(true);
-         proxy_request.setSocketKeepAlive(true);
-
-         proxy_request.on('socket', function(socket) {
-         return socket.on('error', function(error) {
-         return log.error("Socket Error: " + error);
-         });
-         });
-         */
         // Let's pipe both sides.
         //
         proxy_request.on('response', function (proxy_response) {
@@ -272,12 +252,19 @@ var beAServer = function (proxyServerPort, proxyServerIP) {
         logger.logFunction('Piping client to webServer', logger.verboseLevel);
         request.pipe(proxy_request);
 
-        if ((counterToShareMessages % 100) === 0) {
+        if ((counterToShareMessages % 500) === 0) {
             logger.logFunction('ProxyServer request number ' + counterToShareMessages, logger.quietLevel);
         }
 
 
-    }).listen(proxyServerPort, proxyServerIP);
+    });
+
+    logger.logFunction('Proxy worker. We limit the maximum number or requests to ' + psMaxConn, logger.quietLevel);
+
+    // Let's limit the number of request
+    httpProxyServer.maxConnections = psMaxConn;
+
+    httpProxyServer.listen(proxyServerPort, proxyServerIP);
 
     if (typeof process.send === 'function') {
         // We are ready to serve (message to Master)

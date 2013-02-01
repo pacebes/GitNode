@@ -30,6 +30,7 @@ exports.dbRActivity = 'DBR';
 exports.dbWActivity = 'DBW';
 exports.dbRWActivity = 'DBRW';
 exports.msDBInactivityToWait = 1000;
+exports.maxKeysToProcess = 100;
 exports.accountingChannel = 'Accounting saving Channel';
 
 
@@ -65,7 +66,7 @@ var connectToDB = function () {
     });
 
     redisClient.on("end", function (err) {
-        logger.logFunction("Redis end", logger.quietLevel);
+        logger.logFunction("Redis end", logger.verboseLevel);
     });
 
     // Select the redis Database
@@ -113,6 +114,7 @@ var printKeyData = function (keyToPrint, structureToPrint, fileStream, HTMLForma
     // Still working
     dbReadActivity = true;
     dbRedisInternalCall = true;
+
     // Data
     redisClient.hmget(keyToPrint, structureToPrint, function (err, d) {
         dbReadActivity = true;
@@ -139,30 +141,35 @@ var printKeyData = function (keyToPrint, structureToPrint, fileStream, HTMLForma
         if (typeof(callbackFunction) !== 'undefined') {
 
             if (outputFileName !== 'stdout') {
-                fileStream.close( function () {
-                    callbackFunction(outputFileName);
-                });
+                fileStream.close( function () { callbackFunction(outputFileName); });
             }
             else {
                 callbackFunction(outputFileName);
             }
-
-            // drain works with NOT buffered streams
-            // which also needs createWriteStream if we don't want to wait
-            // callback after a "write"
-            /*
-            fileStream.once('drain', function () {
-                if (outputFileName !== 'stdout') {
-                    fileStream.end();
-                }
-                callbackFunction(outputFileName);
-            });
-            */
         }
-
     });
 };
 
+var printDataStructure = function (key, fileStream, internalHTMLFormat, callbackFunction, pOutputFileName) {
+
+    dbReadActivity = true;
+    dbRedisInternalCall = true;
+
+    // We obtain the structure (not optimal, but generic)
+    redisClient.hkeys(key, function (err, replies) {
+        dbReadActivity = true;
+        dbRedisInternalCall = false;
+        var iDataStructure = [];
+
+        // For each element we get the structure
+        replies.forEach(function (reply, i) {
+            iDataStructure.push(reply);
+        });
+        printKeyData(key, iDataStructure, fileStream, internalHTMLFormat, callbackFunction, pOutputFileName);
+        logger.logFunction('AccountingInformation: processing Key: ' + key, logger.verboseLevel);
+
+    });
+};
 
 exports.saveProxyInformation = function (pUrl, pOriginIP, pMethod) {
     var parsedURL = url.parse(pUrl, true),
@@ -173,7 +180,6 @@ exports.saveProxyInformation = function (pUrl, pOriginIP, pMethod) {
             DestinationPath: parsedURL.path.toString(),
             DestinationProtocol: parsedURL.protocol.toString(),
             Method: pMethod.toString(),
-            // DateEventmiliseconds: dateNow.toString(),
             dateEventHuman: Date(dateNow).toString()
     };
 
@@ -183,76 +189,77 @@ exports.saveProxyInformation = function (pUrl, pOriginIP, pMethod) {
 
 };
 
+
 // Print Redis
-exports.printHmsetKeys = function (pArgKey, pOutputFileName, pHTMLFormat, pHTMLheader, functionToCallBackWhenEnd) {
+exports.printHmsetKeys = function (pArgKey, pMaxKeys, pOutputFileName, pHTMLFormat, pHTMLHeader, functionToCallBackWhenEnd) {
 
-    var internalKey = (typeof(pArgKey) === 'undefined') ? accountingPrefix : pArgKey,
-        vOutputFileName = (typeof(pOutputFileName) === 'undefined') ? 'stdout' : pOutputFileName,
-        internalHTMLFormat = (typeof(pHTMLFormat) === 'undefined') ? false : pHTMLFormat,
-        vHTMLheader = ( typeof(pHTMLheader) === 'undefined') ? '' : pHTMLheader ,
-        callbackFunction = (typeof(functionToCallBackWhenEnd) === 'undefined') ? function () {
-        } : functionToCallBackWhenEnd,
-        fileStream; // File Stream
 
-    if (vOutputFileName !== 'stdout') {
-        fileStream = createOutputFile(vOutputFileName);
-    }
-    else {
-        fileStream = process.stdout;
-    }
+    var internalKey = typeof(pArgKey) === 'undefined' ? accountingPrefix : pArgKey,
+        vMaxKeys = typeof(pMaxKeys) === 'undefined' ? exports.maxKeysToProcess : pMaxKeys,
+        vOutputFileName = typeof(pOutputFileName) === 'undefined' ? 'stdout' : pOutputFileName,
+        internalHTMLFormat = typeof(pHTMLFormat) === 'undefined' ? false : pHTMLFormat,
+        vHTMLHeader = typeof(pHTMLHeader) === 'undefined' ? '' : pHTMLHeader ,
+        callbackFunction = typeof(functionToCallBackWhenEnd) === 'undefined' ? function () {} : functionToCallBackWhenEnd,
+        fileStream,
+        dataStructure = [],
+        i, numberOfKeysToPrint;
 
     dbReadActivity = true;
     dbRedisInternalCall = true;
+
+    logger.logFunction('Calling Redis with '+ internalKey + '*', logger.verboseLevel);
+
     // Any main key
     redisClient.keys(internalKey + '*', function (err, listOfKeys) {
         dbReadActivity = true;
         dbRedisInternalCall = false;
 
         if (err) {
-            return console.log(err);
-        }
-
-        var dataStructure = [];
-
-        fileStream.write(vHTMLheader);
-        fileStream.write('OL\n');
-
-        // If no data...
-        if (listOfKeys.length === 0) {
+            logger.logFunction('Problem within redis keys function call: ', error, logger.quietLevel);
             callbackFunction(pOutputFileName);
-            if (vOutputFileName !== 'stdout') {
-                fileStream.close(function () {
-                });
-            }
             return;
         }
 
-        // We dive within the keys to know the structure
-        listOfKeys.forEach(function (lkElement, i) {
+        // Number of keys to Print
+        numberOfKeysToPrint = vMaxKeys === 0 ? listOfKeys.length : Math.min(vMaxKeys,listOfKeys.length);
 
-            dbReadActivity = true;
-            dbRedisInternalCall = true;
+        logger.logFunction('Success within redis keys function call. Number of keys' +  listOfKeys.length+
+            '. Limited to ' + numberOfKeysToPrint + '.', logger.verboseLevel);
 
-            // We obtain the structure (not optimal, but generic)
-            redisClient.hkeys(lkElement, function (err, replies) {
-                dbReadActivity = true;
-                dbRedisInternalCall = false;
+        fileStream = vOutputFileName !== 'stdout' ? createOutputFile(vOutputFileName) : process.stdout;
 
-                dataStructure = [];
+        // HTML headers
+        if (internalHTMLFormat === true) {
+            logger.logFunction('HTML header: ', vHTMLHeader, logger.verboseLevel);
+            // Headers
+            fileStream.write(vHTMLHeader);
+            fileStream.write('OL\n');
+        }
 
-                // For each element we get the structure
-                replies.forEach(function (reply, i) {
-                    dataStructure.push(reply);
+        if (numberOfKeysToPrint === 0) {
+            logger.logFunction('Redis accounting: 0 Keys to print ', logger.verboseLevel);
+
+            if (vOutputFileName === 'stdout') {
+                callbackFunction(pOutputFileName);
+            } else {
+                fileStream.close(function () {
+                    callbackFunction(pOutputFileName);
                 });
-                // The last one
-                if (i === (listOfKeys.length - 1)) {
-                    printKeyData(lkElement, dataStructure, fileStream, internalHTMLFormat, callbackFunction, pOutputFileName);
-                }
-                else {
-                    printKeyData(lkElement, dataStructure, fileStream, internalHTMLFormat);
-                }
-            });
-        });
+            }
+        } else {
+
+            // Everyone but the last one
+            for (i = 0; i < (numberOfKeysToPrint - 1); i += 1) {
+
+                logger.logFunction('AccountingInformation: processing Key number ' + i, logger.verboseLevel);
+                printDataStructure(listOfKeys[i], fileStream, internalHTMLFormat);
+            }
+
+            // The last one
+            logger.logFunction('AccountingInformation: processing Key number ' + i, logger.verboseLevel);
+
+            printDataStructure(listOfKeys[numberOfKeysToPrint - 1], fileStream, internalHTMLFormat, callbackFunction, pOutputFileName);
+        }
     });
 };
 
@@ -260,8 +267,8 @@ exports.printHmsetKeys = function (pArgKey, pOutputFileName, pHTMLFormat, pHTMLh
 // Initialize (may ben not) the DB and maxTimeToWait
 //
 exports.init = function (initializeDB, timeToWaitForDB) {
-    var internalDBInitialize = (typeof(initializeDB) === 'undefined') ? false : initializeDB;
-    exports.msDBInactivityToWait = (typeof(timeToWaitForDB) === 'undefined') ? exports.msDBInactivityToWait : timeToWaitForDB;
+    var internalDBInitialize = typeof(initializeDB) === 'undefined' ? false : initializeDB;
+    exports.msDBInactivityToWait = typeof(timeToWaitForDB) === 'undefined' ? exports.msDBInactivityToWait : timeToWaitForDB;
 
     if (internalDBInitialize === true) {
         connectToDB();

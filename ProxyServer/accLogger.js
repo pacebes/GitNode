@@ -25,7 +25,7 @@ process.on('uncaughtException', function (err) {
 */
 // We init the logger process with DB connection
 acc.init (true,2000);
-acc.printHmsetKeys('NODE_MRU', 'stdout', false, '');
+acc.printHmsetKeys('NODE_MRU', 0, 'stdout', false, '');
 acc.end ();
 
 

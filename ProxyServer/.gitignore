@@ -21,3 +21,6 @@ outputs.file
 process.sh
 monitor
 monitor.sh
+redisOutput
+execRedisServer.sh
+nohup.redisServer
