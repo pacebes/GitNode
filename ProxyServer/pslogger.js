@@ -134,28 +134,36 @@ var logLinuxCPUUsage = function () {
 };
 
 
-exports.setLoggingLevel = function (logEnabled, logLevel) {
+var setLoggingLevel = function (logEnabled, logLevel) {
     enableLog = logEnabled;
     gLogLevel = logLevel;
 };
 
-exports.timeStamp = function () {
+var getLoggingLevel = function () {
+    return gLogLevel;
+}
+
+var getLoggingStatus = function () {
+    return enableLog;
+}
+
+var timeStamp = function () {
     return(Date.now());
 };
 
-exports.humanTimeStamp = function () {
+var humanTimeStamp = function () {
 
     return (Date(exports.timeStamp()).toString());
 };
 
-exports.logTimeStamp = function () {
+var logTimeStamp = function () {
     return(moment().format());
 };
 
 //
 // Function for login purposes only
 //
-exports.logFunction = function (meaning, objectToShow, fLogLevel) {
+var logFunction = function (meaning, objectToShow, fLogLevel) {
 
     var isThereAnObjectToShow;
 
@@ -189,29 +197,42 @@ exports.logFunction = function (meaning, objectToShow, fLogLevel) {
 //
 // Print a URL after parsing it
 //
-exports.printURL = function (urlToPrint) {
+var printURL = function (urlToPrint) {
     var parsedURL = url.parse(urlToPrint, true);
     exports.logFunction('URL', parsedURL, exports.quietLevel);
 };
 
 
-exports.enableProcLogging = function (reportingPeriod, reportToParent, verbosityLevel, initialText, cpuReporting, memoryReporting) {
-    procLastData = { cpuUsage:"XXX", memory:{rss:0, heapTotal:0, heapUsed:0} };
+var enableProcLogging = function (reportingPeriod, reportToParent, verbosityLevel, initialText, cpuReporting, memoryReporting) {
+    procLastData = { cpuUsage:"XXX", memory: {rss: 0, heapTotal: 0, heapUsed: 0} };
     logIntervalID = setInterval(logProcUse, reportingPeriod, reportToParent, verbosityLevel, initialText, cpuReporting, memoryReporting);
 };
 
-exports.disableProcLogging = function () {
+var disableProcLogging = function () {
     clearInterval(logIntervalID);
     procLastData = { cpuUsage:"XXX", memory:{rss:0, heapTotal:0, heapUsed:0} };
 };
 
 //
-exports.init = function () {
+var init = function () {
 
 };
 
 //
-exports.end = function () {
+var end = function () {
 
 };
+
+exports.init = init;
+exports.end = end;
+exports.disableProcLogging = disableProcLogging;
+exports.enableProcLogging = enableProcLogging;
+exports.printURL = printURL;
+exports.setLoggingLevel = setLoggingLevel;
+exports.getLoggingLevel = getLoggingLevel;
+exports.getLoggingStatus = getLoggingStatus;
+exports.timeStamp = timeStamp;
+exports.humanTimeStamp = humanTimeStamp;
+exports.logTimeStamp = logTimeStamp;
+exports.logFunction = logFunction;
 
